@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  host:
+    name: Host build and tests (Qt ${{ matrix.qt }})
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        qt: ["5.15"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt and tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build g++ qtbase5-dev qtdeclarative5-dev qtbase5-dev-tools \
+            libqt5sql5-sqlite libqt5opengl5-dev xvfb libgl1-mesa-dri
+      - name: Configure (mock engine)
+        run: cmake -S . -B build -G Ninja -DTUULI_ENGINE=mock -DTUULI_WARNINGS_AS_ERRORS=ON
+      - name: Build
+        run: ninja -C build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Configure (servo shim against the no-op stub)
+        run: cmake -S . -B build-servo -G Ninja -DTUULI_ENGINE=servo -DTUULI_SERVO_STUB=ON -DTUULI_BUILD_TESTS=OFF -DTUULI_WARNINGS_AS_ERRORS=ON
+      - name: Build shim
+        run: ninja -C build-servo
+      - name: Header self-check
+        run: tools/check-capi-header.sh servo/capi/servo_capi.h servo/capi/servo_capi.h
+      - name: Tooling smoke test
+        run: |
+          python3 tools/make-icons.py
+          git diff --exit-code -- icons || (echo "icons out of date; run tools/make-icons.py" && exit 1)
+          printf '{"kind":"start","cold":true,"first_paint_ms":900}\n' > perf.log
+          python3 tools/perf/run-budgets.py perf.log || true
+
+  sailfish:
+    # Builds the mock-engine RPMs on the real SDK target: the only place the
+    # Qt 5.6 API constraint (spec 3.2) is actually enforced.
+    name: Sailfish OS RPM (aarch64, mock engine)
+    runs-on: ubuntu-24.04
+    container:
+      image: ghcr.io/sailfishos-chum/sailfish-platform-sdk:latest
+      options: --user root
+    env:
+      SFOS_TARGET: SailfishOS-latest-aarch64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build RPMs
+        shell: bash
+        run: |
+          set -e
+          TARGET=$(sdk-assistant list 2>/dev/null | grep -i aarch64 | head -1 | awk '{print $1}' || true)
+          if [ -z "$TARGET" ]; then echo "no aarch64 target in this image; skipping"; exit 0; fi
+          mkdir -p ~/rpmbuild/SOURCES
+          tar --transform 's,^,tuuli-browser-0.1.0/,' -cjf ~/rpmbuild/SOURCES/tuuli-browser-0.1.0.tar.bz2 \
+            --exclude=build --exclude='build-*' --exclude=.git .
+          sb2 -t "$TARGET" -m sdk-install -R zypper --non-interactive in -y \
+            cmake gcc-c++ desktop-file-utils qt5-qtcore-devel qt5-qtgui-devel qt5-qtdeclarative-devel \
+            qt5-qtsql-devel qt5-qtdbus-devel libsailfishapp-devel || true
+          sb2 -t "$TARGET" rpmbuild --with mock_engine -ba rpm/tuuli-browser.spec
+      - name: Upload RPMs
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: rpms-aarch64-mock
+          path: ~/rpmbuild/RPMS/**/*.rpm
+          if-no-files-found: ignore

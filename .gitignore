@@ -1,0 +1,17 @@
+build/
+build-*/
+*.o
+*.so
+*.so.*
+*.rpm
+RPMS/
+SRPMS/
+servo/src/
+servo/out/
+servo/target/
+servo/vendor/
+__pycache__/
+*.pyc
+.cache/
+CMakeCache.txt
+CMakeFiles/

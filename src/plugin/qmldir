@@ -1,0 +1,3 @@
+module Tuuli
+plugin tuuliqmlplugin
+typeinfo plugins.qmltypes

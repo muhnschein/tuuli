@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Tuuli
+Comment=Servo-based web browser (experimental, second browser)
+Icon=tuuli-browser
+Exec=tuuli-browser
+X-Nemo-Application-Type=silica-qt5
+X-Nemo-Single-Instance=no
+Categories=Network;WebBrowser;
+
+[X-Sailjail]
+OrganizationName=org.tuuli
+ApplicationName=browser
+Permissions=Internet;Audio;Downloads;Pictures;Videos;Documents;UserDirs

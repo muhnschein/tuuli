@@ -1,0 +1,16 @@
+{
+  "_comment": "Spec 11 performance budgets. Device: Jolla Phone (2026), 8 GB, Wi-Fi. panel_hz is unconfirmed (spec 15.1); frame budgets are restated against the real refresh rate by run-budgets.py --panel-hz.",
+  "device": "Jolla Phone (2026)",
+  "panel_hz": 60,
+  "budgets": {
+    "cold_start_first_paint_ms":       { "max": 1200, "unit": "ms" },
+    "warm_start_first_paint_ms":       { "max": 400,  "unit": "ms" },
+    "article_first_contentful_paint_ms": { "max": 2000, "unit": "ms", "page": "news-article" },
+    "scroll_fps_article":              { "min_fraction_of_panel": 0.9667, "unit": "fps", "page": "news-article" },
+    "pinch_dropped_frames_fraction":   { "max": 0.03, "unit": "fraction" },
+    "rss_one_tab_article_mb":          { "max": 450,  "unit": "MB", "page": "news-article" },
+    "rss_eight_tabs_mb":               { "max": 1400, "unit": "MB" },
+    "battery_30min_reading_percent":   { "max": 8,    "unit": "%" }
+  },
+  "gate": "M3"
+}

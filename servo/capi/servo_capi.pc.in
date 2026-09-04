@@ -1,0 +1,9 @@
+prefix=@PREFIX@
+libdir=${prefix}/lib64
+includedir=${prefix}/include
+
+Name: servo_capi
+Description: C ABI for the Servo web engine (libservo)
+Version: @VERSION@
+Libs: -L${libdir} -lservo
+Cflags: -I${includedir}

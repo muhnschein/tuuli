@@ -1,0 +1,15 @@
+{
+  "_comment": "Spec 11: the fixed ten-page corpus every budget and screenshot run uses. Kept as real, stable public pages; refresh URLs only with a note in the changelog.",
+  "pages": [
+    { "id": "news-article",   "kind": "news article",              "url": "https://www.theguardian.com/technology" },
+    { "id": "webmail",        "kind": "webmail inbox",             "url": "https://app.tuta.com/login", "note": "login page stands in; a real inbox needs credentials on the device" },
+    { "id": "forum-thread",   "kind": "forum thread",              "url": "https://forum.sailfishos.org/latest" },
+    { "id": "docs-site",      "kind": "documentation site",        "url": "https://book.servo.org/" },
+    { "id": "wiki",           "kind": "wiki page",                 "url": "https://en.wikipedia.org/wiki/Sailfish_OS" },
+    { "id": "search-results", "kind": "search results (no maps)",  "url": "https://duckduckgo.com/?q=sailfish+os+servo&ia=web" },
+    { "id": "github-file",    "kind": "GitHub file view",          "url": "https://github.com/servo/servo/blob/main/README.md" },
+    { "id": "mastodon",       "kind": "Mastodon timeline",         "url": "https://fosstodon.org/public/local" },
+    { "id": "webshop",        "kind": "webshop product page",      "url": "https://shop.jolla.com/" },
+    { "id": "heavy-spa",      "kind": "heavy JS single-page app",  "url": "https://excalidraw.com/" }
+  ]
+}
