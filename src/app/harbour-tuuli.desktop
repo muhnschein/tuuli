@@ -1,0 +1,24 @@
+[Desktop Entry]
+Type=Application
+X-Nemo-Application-Type=silica-qt5
+Icon=harbour-tuuli
+Exec=harbour-tuuli
+Name=Tuuli
+Comment=Servo-based web browser
+Categories=Network;WebBrowser;
+
+# The sandbox profile (spec 9.1).  Sailjail confines the app to
+# $HOME/.local/share/<OrganizationName>/<ApplicationName> and the .cache
+# and .config equivalents; libsailfishapp names both after the binary, so
+# these are the package name and the app's own paths agree
+# (crates/tuuli-core/src/paths.rs, checked by ci/harbour-check.sh).
+#
+# Internet for the engine; Audio for media playback through PulseAudio;
+# Downloads for what the engine saves; Pictures, Videos and Documents plus
+# UserDirs for file uploads through Silica's pickers, which run inside this
+# process.  Location, Camera and Microphone are not declared until the
+# milestone that uses them.
+[X-Sailjail]
+Permissions=Internet;Audio;Downloads;Pictures;Videos;Documents;UserDirs
+OrganizationName=harbour-tuuli
+ApplicationName=harbour-tuuli

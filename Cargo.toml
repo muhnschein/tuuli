@@ -15,7 +15,9 @@ version = "0.1.0"
 edition = "2021"
 license = "MPL-2.0"
 repository = "https://github.com/muhnschein/tuuli"
-rust-version = "1.80"
+# The Sailfish SDK ships Rust 1.75.0 (sailfishos/rust) and builds the
+# mock-engine package with it; the Servo binary uses Servo's own toolchain.
+rust-version = "1.75"
 
 [workspace.dependencies]
 tuuli-core = { path = "crates/tuuli-core" }
@@ -26,7 +28,8 @@ qttypes = "0.2"
 cpp = "0.5"
 cpp_build = "0.5"
 cstr = "0.2"
-rusqlite = { version = "0.32", features = ["bundled"] }
+# 0.31 is the last rusqlite that builds with Rust 1.75.
+rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 url = "2"
@@ -39,3 +42,10 @@ env_logger = "0.11"
 debug = 1
 lto = "thin"
 codegen-units = 4
+
+# qmetaobject builds its QML engine on QApplication, from QtWidgets, which
+# Harbour does not allow (docs/HARBOUR.md).  The vendored copy is upstream
+# 0.2.10 plus third_party/qmetaobject.patch, three lines swapping it for
+# QGuiApplication; ci/vendor-check.sh proves it is exactly that.
+[patch.crates-io]
+qmetaobject = { path = "third_party/qmetaobject" }

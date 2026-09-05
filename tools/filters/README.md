@@ -2,7 +2,7 @@
 
 Drop EasyList-format lists (`*.txt`) into
 
-    ~/.local/share/org.tuuli/browser/filters/
+    ~/.local/share/harbour-tuuli/harbour-tuuli/filters/
 
 and toggle "Cosmetic filtering" in Settings.  Only element-hiding rules
 (`##`, `domain##`, `#@#`) are used; network rules are ignored because Servo

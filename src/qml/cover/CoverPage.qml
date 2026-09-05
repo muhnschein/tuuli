@@ -25,7 +25,7 @@ CoverBackground {
             width: Theme.iconSizeLarge
             height: width
             sourceSize: Qt.size(width, height)
-            source: tab && tab.hasFavicon ? tab.faviconSource : "image://theme/icon-launcher-tuuli-browser"
+            source: tab && tab.hasFavicon ? tab.faviconSource : "image://theme/harbour-tuuli"
             asynchronous: true
         }
 

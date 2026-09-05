@@ -13,9 +13,10 @@ name = "tuuli_browser"
 path = "src/lib.rs"
 
 # The mock-engine binary: host builds, emulator, UI iteration on device.
-# The Servo-linked binary of the same name is servo/app.
+# The Servo-linked binary of the same name is servo/app.  Named for the
+# package: Harbour installs it as /usr/bin/harbour-tuuli (docs/HARBOUR.md).
 [[bin]]
-name = "tuuli-browser"
+name = "harbour-tuuli"
 path = "src/main.rs"
 
 [features]

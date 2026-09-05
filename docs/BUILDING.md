@@ -6,12 +6,13 @@ Four builds exist:
 |---|---|---|---|
 | host, mock | any Linux with Qt 5 dev packages | `MockEngine` | unit tests, Qt layer, chrome iteration |
 | host, backend check | as above plus Servo's build deps | `cargo check` of `servo/backend` | API reconciliation against the pinned tag |
-| device, mock | Sailfish Platform SDK, aarch64 target | `MockEngine` | the Qt 5.6 constraint, chrome on device |
-| device, servo | SDK host, cross-compiled against the target root | `ServoEngine` | the product |
+| device, mock | the Sailfish SDK image, aarch64 target, the SDK's Rust 1.75 | `MockEngine` | the Qt 5.6 constraint, the chrome and sailjail on a device |
+| device, servo | cross-compiled against the SDK target root with Servo's toolchain | `ServoEngine` | the product |
 
-Only Qt 5.6 API is used.  Newer host Qt builds it fine; if a host build
-uses something 5.6 lacks, the SDK target build (Qt 5.6) will fail, which is
-why CI builds on the SDK target too.
+Only Qt 5.6 API is used, and only Rust 1.75 language and library features
+(`rust-version = "1.75"`, the toolchain the SDK ships).  Newer host
+toolchains build it fine; CI's `msrv` job and the SDK build keep both
+constraints honest.
 
 ## Host
 
@@ -26,18 +27,18 @@ The tests are Qt-free `cargo test`s in `tuuli-core` plus a smoke test in
 display it renders through the real FBO path:
 
     sudo apt install xvfb libgl1-mesa-dri libglx-mesa0 libegl-mesa0
-    xvfb-run -a -s "-screen 0 1080x2260x24" \
-        env QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 \
-        cargo test -p tuuli-browser --test smoke -- --nocapture
+    make smoke
 
-The mock build's binary (`cargo run -p tuuli-browser`) opens a bare
-`QQuickView` on the QML in `src/qml`; it needs Silica to show anything, so
-on a host it only proves that the Rust-exported types load.  On the
-emulator or a device the mock-engine RPM (below) runs the full chrome with
-placeholder content.
+`make check` runs everything CI runs that needs no SDK: format, clippy,
+the tests, the Rust 1.75 build, the lockfile format, the QML syntax, the
+packaging lint, the Harbour source check with its selftest, and the
+vendored-crate check.  The Makefile header lists the packages each wants.
 
-Before pushing: `cargo fmt --all` and
-`cargo clippy --workspace --all-targets -- -D warnings`; CI rejects both.
+The mock build's binary (`cargo run -p tuuli-browser`, named
+`harbour-tuuli`) opens a bare `QQuickView` on the QML in `src/qml`; it
+needs Silica to show anything, so on a host it only proves that the
+Rust-exported types load.  On a device the mock-engine RPM runs the full
+chrome with placeholder content.
 
 ## Backend check
 
@@ -50,44 +51,62 @@ openssl headers).  This is the M0 reconciliation step: it is where the
 backend's use of `WebViewDelegate`, `ServoDelegate` and
 `RenderingContext` is checked against what 0.5.0 actually exports.
 
-## Device, mock engine
+## Device: the supported path
 
-Inside the Platform SDK, from vendored crates so the target builds
-offline:
+`.github/workflows/rpm.yml` builds a device RPM unattended on a GitHub
+runner from a `docker run` of `coderus/sailfishos-platform-sdk`, pinned by
+digest.  Dispatch it from the Actions tab (engine, arch and SDK version
+are inputs) or push a `v*` or `build-*` tag.  It follows Postivene's
+workflow of the same name, whose comments record what each step cost to
+learn; the essentials:
 
-    tools/vendor.sh ~/rpmbuild/SOURCES        # git archive + cargo vendor tarball
-    sb2 -t SailfishOS-5.2.0.x-aarch64 -m sdk-install -R zypper in \
-        rust cargo gcc-c++ qt5-qmake qt5-qtcore-devel qt5-qtgui-devel \
-        qt5-qtdeclarative-devel qt5-qtdbus-devel qt5-qtwidgets-devel \
-        libsailfishapp-devel desktop-file-utils
-    sb2 -t SailfishOS-5.2.0.x-aarch64 rpmbuild -ba rpm/tuuli-browser.spec
+- **Engine `mock`**: `mb2 build` inside the SDK container, as the image's
+  own `mersdk` user, with the checkout mounted under that user's home
+  (scratchbox2 redirects other absolute paths into the target root).  The
+  SDK's own Rust 1.75 builds the workspace; the i686 rustlib is lifted out
+  of the tooling and mounted where build-script links look for it.
+  Minutes.
+- **Engine `servo`**: the SDK's Rust cannot build Servo and Rust does not
+  mix compiler versions in one link, so the container is used only to
+  install the development headers into the target and copy the target root
+  out as a sysroot; `servo/build.sh --sysroot` then cross-compiles
+  `servo/app` on the runner with Servo's pinned toolchain and clang, and
+  `mb2 build -- --with servo` packages the result.  Hours, and the first
+  runs are M0's engine spike.
+- Every build is stamped `Release: 1.<run number>` so it installs over the
+  last; the RPM is uploaded as an artifact; then Jolla's validator runs on
+  it (`ci/harbour-validate-rpm.sh`), after the upload so that a package
+  Harbour would reject can still be put on a phone.
 
-(`sfdk build -p rpm/tuuli-browser.spec` works the same way once the two
-tarballs are where sfdk looks for sources.)  The result installs on the
-device and runs the chrome with the mock engine.
+Install the artifact on the device with `pkcon install-local` or
+`rpm -U`, and launch it as `sailjail /usr/bin/harbour-tuuli` to run under
+the same sandbox the launcher applies.
 
-## Device, Servo engine
+## Device: locally
 
-`servo/build.sh` cross-compiles `servo/app` for
-`aarch64-unknown-linux-gnu` on the SDK **host**, with the SDK target root
-as the sysroot: Qt and libsailfishapp headers and libraries come from it
-(`QT_INCLUDE_PATH`/`QT_LIBRARY_PATH` for qttypes, `SAILFISHAPP_INCLUDE_PATH`
-for the application crate), as do the C/C++ dependencies through the
-target's pkg-config files.  It runs on the host and not in the target
-because SpiderMonkey needs a recent Clang and Servo's pinned Rust toolchain
-(spec 12.1); the script copies Servo's `rust-toolchain.toml` into
-`servo/app` so cargo uses that toolchain for the whole build.  It applies
-the patch queue if there is one, checks that the binary is aarch64, has
-no host RUNPATH and needs only sysroot libraries, and packs
-`servo/out/tuuli-browser-servo-<version>-aarch64.tar.xz` (plus the
-vendored-crate tarball for the from-source spec).  Requirements and
-environment variables are documented at the top of the script.  Expect
-this to be where M0's time goes; see [M0-CHECKLIST.md](M0-CHECKLIST.md).
+The same steps with a local Platform SDK, mock engine:
 
-Then, in the SDK:
+    mb2 -t SailfishOS-5.2.0.15-aarch64 -X build-init
+    mb2 -t SailfishOS-5.2.0.15-aarch64 -X build --no-check
 
-    cp servo/out/tuuli-browser-servo-*.tar.xz ~/rpmbuild/SOURCES/
-    sb2 -t SailfishOS-5.2.0.x-aarch64 rpmbuild -ba rpm/tuuli-browser-servo.spec
+(`sfdk build` wraps the same.)  Servo engine:
+
+    servo/build.sh                                  # sfdk host shell, or --sysroot <target root>
+    cp servo/out/harbour-tuuli-servo-*.tar.xz rpm/
+    mb2 -t SailfishOS-5.2.0.15-aarch64 -X build --no-check -- --with servo
+
+`servo/build.sh` needs clang ≥ 17, lld, the llvm tools, rustup and cmake;
+it copies Servo's `rust-toolchain.toml` into `servo/app` so cargo uses
+that toolchain for the whole build, applies the patch queue if there is
+one, and checks that the binary is aarch64, has no host RUNPATH and needs
+only sysroot libraries.  Which of those libraries Harbour allows is the
+validator's call (`docs/HARBOUR.md`).
+
+Spec constraints, each found the hard way in Postivene and carried here:
+`-j1` for cargo under sb2; no `--target` for cargo (`SB2_RUST_TARGET_TRIPLE`
+tells the accelerated rustc what to emit); `CARGO_TARGET_<HOST>_LINKER=host-gcc`
+inside sb2; `QT_INCLUDE_PATH`/`QT_LIBRARY_PATH` exported so qttypes never
+runs the target's `qmake`; no bare `%` in a spec comment.
 
 Setting `TUULI_ENGINE=mock` in the environment (or passing
 `--mock-engine`) makes the Servo binary run with the mock engine, which

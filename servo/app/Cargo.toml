@@ -1,4 +1,4 @@
-# The Servo-linked tuuli-browser binary.  Deliberately outside the root
+# The Servo-linked harbour-tuuli binary.  Deliberately outside the root
 # workspace so host builds never resolve Servo; see servo/README.md.
 
 [package]
@@ -12,8 +12,10 @@ publish = false
 [workspace]
 
 [[bin]]
-name = "tuuli-browser"
+name = "harbour-tuuli"
 path = "src/main.rs"
+
+[build-dependencies]
 
 [features]
 default = []
@@ -28,3 +30,7 @@ tuuli-servo-backend = { path = "../backend" }
 debug = 1
 lto = "thin"
 codegen-units = 4
+
+# Same as the root workspace: QGuiApplication instead of QtWidgets' QApplication.
+[patch.crates-io]
+qmetaobject = { path = "../../third_party/qmetaobject" }

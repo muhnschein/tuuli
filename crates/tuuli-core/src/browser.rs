@@ -674,7 +674,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let engine = MockEngine::new();
         let mut b = Browser::new(engine.clone(), AppPaths::under(dir.path()), None).unwrap();
-        b.start(&["tuuli-browser".into()]);
+        b.start(&["harbour-tuuli".into()]);
         (engine, b, dir)
     }
 

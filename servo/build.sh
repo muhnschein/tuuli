@@ -3,35 +3,38 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
-# Cross-compiles the Servo-linked tuuli-browser (servo/app) for aarch64
+# Cross-compiles the Servo-linked harbour-tuuli (servo/app) for aarch64
 # Sailfish OS 5.2 against the pinned Servo tag (spec 3.3, 12.1) and packs
-# the tarball rpm/tuuli-browser-servo.spec installs.
+# the tarball `rpm/harbour-tuuli.spec --with servo` installs.
 #
-# Run this on the SDK host, NOT inside the SDK target: SpiderMonkey needs a
-# recent Clang and Servo's pinned Rust toolchain, and the target's GCC is
-# too old for either (spec 12.1).  The SDK target root is used only as the
-# sysroot: Qt, libsailfishapp and the C/C++ dependencies come from it, and
-# the binary is linked against it.
+# Run this on the SDK host (or a CI runner), NOT inside the SDK target: the
+# SDK's Rust is 1.75 and cannot build Servo, SpiderMonkey needs a recent
+# Clang, and the target's GCC is too old for either (spec 12.1).  The SDK
+# target root is used only as the sysroot: Qt, libsailfishapp and the C/C++
+# dependencies come from it, and the binary is linked against it.
 #
 # Prerequisites (host):
-#   - Sailfish Platform SDK with an aarch64 target installed, e.g.
-#       sfdk tools target list  ->  SailfishOS-5.2.0.x-aarch64
+#   - the target root: a Sailfish Platform SDK with an aarch64 target
+#     installed (sfdk tools target list -> SailfishOS-5.2.0.x-aarch64), or
+#     a copy of one passed with --sysroot (what the rpm workflow does,
+#     lifted out of the SDK container)
 #   - clang >= 17, lld, llvm-ar, llvm-readelf, llvm-strip, llvm-objcopy
 #   - rustup (the toolchain is Servo's rust-toolchain.toml at the tag,
 #     copied to servo/app/ so cargo uses it for the whole build)
 #   - python3, pkg-config, cmake, git, curl, xz
 #
 # Usage:
-#   servo/build.sh [--target SailfishOS-5.2.0.x-aarch64] [--jobs N] [--no-vendor]
+#   servo/build.sh [--target SailfishOS-5.2.0.x-aarch64 | --sysroot DIR] [--jobs N]
 #
-# Outputs (servo/out/):
-#   tuuli-browser-servo-<ver>-aarch64.tar.xz  Source1 of rpm/tuuli-browser-servo.spec:
-#                                             bin/tuuli-browser (stripped) + debug/tuuli-browser.debug
-#   tuuli-browser-servo-<ver>-vendor.tar.xz   Source2: `cargo vendor` of servo/app, Servo's tree
-#                                             included, plus the source-replacement config
+# Output:
+#   servo/out/harbour-tuuli-servo-<ver>-aarch64.tar.xz
+#       bin/harbour-tuuli (stripped) + debug/harbour-tuuli.debug; copy it to
+#       rpm/ and build the spec with --with servo.
 #
 # Exit criteria this script checks (spec 10, M0.1): the binary builds, is
 # aarch64, has no host RUNPATH and needs only libraries the sysroot has.
+# Which of those libraries Harbour allows is the validator's call
+# (docs/HARBOUR.md).
 
 set -euo pipefail
 
@@ -42,19 +45,19 @@ TAG="$(tr -d '[:space:]' < "$HERE/SERVO_TAG")"
 GIT_TAG="v$TAG"
 VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' "$ROOT/Cargo.toml" | head -1)"
 SFDK_TARGET="${SFDK_TARGET:-}"
+SYSROOT="${SYSROOT:-}"
 JOBS="${JOBS:-$(nproc)}"
 SRC="$HERE/src/servo"
 OUT="$HERE/out"
 RUST_TARGET="aarch64-unknown-linux-gnu"
 CLANG_TARGET="aarch64-linux-gnu"
-VENDOR=1
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --target) SFDK_TARGET="$2"; shift 2 ;;
+        --sysroot) SYSROOT="$2"; shift 2 ;;
         --jobs) JOBS="$2"; shift 2 ;;
-        --no-vendor) VENDOR=0; shift ;;
-        --help|-h) sed -n '2,36p' "$0"; exit 0 ;;
+        --help|-h) sed -n '2,40p' "$0"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -65,23 +68,24 @@ die() { printf '\033[1;31merror: %s\033[0m\n' "$*" >&2; exit 1; }
 for tool in clang clang++ ld.lld llvm-ar llvm-readelf llvm-strip llvm-objcopy rustup cargo curl python3 pkg-config cmake git xz; do
     command -v "$tool" >/dev/null || die "$tool not found"
 done
-command -v sfdk >/dev/null || die "sfdk not found; run inside the Sailfish SDK host shell"
 
 # The pins must agree: servo/SERVO_TAG and the git tag in servo/backend/Cargo.toml.
 grep -q "tag = \"$GIT_TAG\"" "$HERE/backend/Cargo.toml" \
     || die "servo/backend/Cargo.toml does not pin tag \"$GIT_TAG\" (servo/SERVO_TAG says $TAG)"
 
 # ---- SDK target ----------------------------------------------------------
-if [ -z "$SFDK_TARGET" ]; then
-    SFDK_TARGET="$(sfdk tools target list 2>/dev/null | grep -i aarch64 | head -1 | awk '{print $1}')"
-    [ -n "$SFDK_TARGET" ] || die "no aarch64 target installed; sfdk tools target install ..."
-fi
-log "SDK target: $SFDK_TARGET"
-
-# The target root as seen from the host.
-SYSROOT="$(sfdk tools exec "$SFDK_TARGET" sb2-config -t 2>/dev/null || true)"
-if [ -z "$SYSROOT" ] || [ ! -d "$SYSROOT" ]; then
-    SYSROOT="$HOME/SailfishOS/mersdk/targets/$SFDK_TARGET"
+if [ -z "$SYSROOT" ]; then
+    command -v sfdk >/dev/null || die "sfdk not found; run inside the Sailfish SDK host shell, or pass --sysroot"
+    if [ -z "$SFDK_TARGET" ]; then
+        SFDK_TARGET="$(sfdk tools target list 2>/dev/null | grep -i aarch64 | head -1 | awk '{print $1}')"
+        [ -n "$SFDK_TARGET" ] || die "no aarch64 target installed; sfdk tools target install ..."
+    fi
+    log "SDK target: $SFDK_TARGET"
+    # The target root as seen from the host.
+    SYSROOT="$(sfdk tools exec "$SFDK_TARGET" sb2-config -t 2>/dev/null || true)"
+    if [ -z "$SYSROOT" ] || [ ! -d "$SYSROOT" ]; then
+        SYSROOT="$HOME/SailfishOS/mersdk/targets/$SFDK_TARGET"
+    fi
 fi
 [ -d "$SYSROOT/usr/include/qt5/QtCore" ] || die "target sysroot with Qt headers not found at $SYSROOT"
 [ -d "$SYSROOT/usr/include/sailfishapp" ] || die "libsailfishapp-devel is not installed in the target"
@@ -163,17 +167,17 @@ set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 CM
 
 # ---- Build ---------------------------------------------------------------
-log "building tuuli-browser-servo $VERSION (servo $GIT_TAG) for $RUST_TARGET (jobs=$JOBS)"
+log "building harbour-tuuli (servo $GIT_TAG) $VERSION for $RUST_TARGET (jobs=$JOBS)"
 (cd "$APP" && cargo build --release -j "$JOBS" --target "$RUST_TARGET" --features sailfish)
 
-BIN="$APP/target/$RUST_TARGET/release/tuuli-browser"
+BIN="$APP/target/$RUST_TARGET/release/harbour-tuuli"
 [ -f "$BIN" ] || die "build produced no $BIN"
 
 # ---- Checks --------------------------------------------------------------
 log "checking the binary"
 llvm-readelf -h "$BIN" | grep -q "AArch64" || die "$BIN is not an aarch64 binary"
 if llvm-readelf -d "$BIN" | grep -q "RUNPATH\|RPATH"; then
-    die "unexpected RUNPATH in tuuli-browser (host paths leaking?)"
+    die "unexpected RUNPATH in harbour-tuuli (host paths leaking?)"
 fi
 for lib in $(llvm-readelf --needed-libs "$BIN" | sed -n 's/^ *\[\(.*\)\]$/\1/p'); do
     [ -e "$LIBDIR/$lib" ] || [ -e "$SYSROOT/lib64/$lib" ] || [ -e "$SYSROOT/lib/$lib" ] \
@@ -184,20 +188,11 @@ done
 STAGE="$OUT/stage"
 rm -rf "$STAGE"
 mkdir -p "$STAGE/bin" "$STAGE/debug"
-llvm-objcopy --only-keep-debug "$BIN" "$STAGE/debug/tuuli-browser.debug"
-cp "$BIN" "$STAGE/bin/tuuli-browser"
-llvm-strip --strip-debug "$STAGE/bin/tuuli-browser"
-llvm-objcopy --add-gnu-debuglink="$STAGE/debug/tuuli-browser.debug" "$STAGE/bin/tuuli-browser"
-tar -C "$STAGE" -cJf "$OUT/tuuli-browser-servo-$VERSION-aarch64.tar.xz" .
-log "wrote $OUT/tuuli-browser-servo-$VERSION-aarch64.tar.xz"
-
-if [ "$VENDOR" = 1 ]; then
-    log "vendoring the servo/app dependency tree for the from-source spec (large)"
-    VSTAGE="$OUT/vendor-stage"
-    rm -rf "$VSTAGE"; mkdir -p "$VSTAGE"
-    (cd "$APP" && cargo vendor --locked "$VSTAGE/vendor" > "$VSTAGE/vendor-config.toml")
-    tar -C "$VSTAGE" -cJf "$OUT/tuuli-browser-servo-$VERSION-vendor.tar.xz" vendor vendor-config.toml
-    rm -rf "$VSTAGE"
-    log "wrote $OUT/tuuli-browser-servo-$VERSION-vendor.tar.xz"
-fi
-log "done"
+llvm-objcopy --only-keep-debug "$BIN" "$STAGE/debug/harbour-tuuli.debug"
+cp "$BIN" "$STAGE/bin/harbour-tuuli"
+llvm-strip --strip-debug "$STAGE/bin/harbour-tuuli"
+llvm-objcopy --add-gnu-debuglink="$STAGE/debug/harbour-tuuli.debug" "$STAGE/bin/harbour-tuuli"
+TARBALL="$OUT/harbour-tuuli-servo-$VERSION-aarch64.tar.xz"
+tar -C "$STAGE" -cJf "$TARBALL" .
+log "wrote $TARBALL"
+log "next: cp $TARBALL rpm/ && build rpm/harbour-tuuli.spec --with servo"

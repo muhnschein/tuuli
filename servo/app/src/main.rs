@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-//! tuuli-browser with the libservo engine.  Everything but the engine
+//! harbour-tuuli with the libservo engine.  Everything but the engine
 //! factory is `tuuli_browser::run`.
 
 fn main() {

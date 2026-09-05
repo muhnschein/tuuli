@@ -5,10 +5,16 @@
 use std::path::PathBuf;
 
 /// The qmetaobject crate ships the C++ support header its `RustObject<T>`
-/// subclasses need.  Prefer the header of the crate cargo resolved; fall
-/// back to the copy in cpp/ (vendored / offline builds).
+/// subclasses need.  The workspace builds against the vendored copy in
+/// third_party/ (docs/HARBOUR.md); the registry lookup is for a build that
+/// has dropped the `[patch]`.
 fn qmetaobject_include_dir() -> PathBuf {
-    let fallback = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("cpp");
+    let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let vendored = manifest.join("../../third_party/qmetaobject");
+    if vendored.join("qmetaobject_rust.hpp").exists() {
+        return vendored;
+    }
+    let fallback = vendored;
     let Some(home) = std::env::var_os("CARGO_HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cargo")))
@@ -47,7 +53,7 @@ fn main() {
     {
         config.flag(f);
     }
-    config.flag("-std=c++17");
+    config.flag("-std=gnu++14");
     config.include(qmetaobject_include_dir());
     config.include(&qt_include_path);
     for module in ["QtCore", "QtGui", "QtQml", "QtQuick", "QtDBus"] {
@@ -56,7 +62,7 @@ fn main() {
     config.build("src/lib.rs");
     println!("cargo:rustc-link-search={qt_library_path}");
     println!("cargo:rustc-link-lib=Qt5DBus");
-    println!("cargo:rerun-if-changed=cpp/qmetaobject_rust.hpp");
+    println!("cargo:rerun-if-changed=../../third_party/qmetaobject/qmetaobject_rust.hpp");
     // cpp_build extracts the C++ from the sources: any edit must re-run it.
     println!("cargo:rerun-if-changed=src");
 }

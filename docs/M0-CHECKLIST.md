@@ -12,14 +12,20 @@ whole approach.
       options, `RenderingContext`).  Every `WebView` method the tag has
       no counterpart for is a logged no-op, recorded in
       [UPSTREAM.md](UPSTREAM.md).
-- [ ] `servo/build.sh` completes against the SFOS 5.2 aarch64 target
-      root, SpiderMonkey included, and qttypes/qmetaobject-rs build
+- [ ] The `rpm` workflow with engine `servo` completes: `servo/build.sh`
+      builds against the SFOS 5.2 aarch64 target root lifted out of the
+      SDK image, SpiderMonkey included, and qttypes/qmetaobject-rs build
       against the target's Qt 5.6 headers through `QT_INCLUDE_PATH`.
+      Expect to iterate on the sysroot's development packages (the
+      workflow's "Lift the target root" step lists them).
 - [ ] `llvm-readelf` shows an aarch64 binary with no RUNPATH and only
       sysroot libraries in `NEEDED`.
-- [ ] The `tuuli-browser-servo` RPM installs on the device and `ldd`
-      resolves against system libraries only (gstreamer, fontconfig,
-      freetype, harfbuzz, EGL/GLESv2 via hybris).
+- [ ] The workflow's validator step lists which of those libraries
+      Harbour does not allow; record each in `ci/harbour/waivers.conf`
+      and take the list to Jolla (`docs/HARBOUR.md`).
+- [ ] The `harbour-tuuli` RPM installs on the device and `ldd` resolves
+      against system libraries only (gstreamer, fontconfig, freetype,
+      harfbuzz, EGL/GLESv2 via hybris).
 
 ## 2. WebRender on Mali-G610 through libhybris
 
@@ -38,8 +44,10 @@ whole approach.
 
 ## 3. Plausible frame rate in a bare window
 
-- [ ] The mock-engine RPM runs the chrome on the device (validates Qt 5.6,
-      Silica, sailjail profile, paths).
+- [ ] The mock-engine RPM (`rpm` workflow, engine `mock`) runs the
+      chrome on the device, launched as `sailjail /usr/bin/harbour-tuuli`
+      (validates Qt 5.6, Silica, the sailjail profile, the data paths,
+      and whether Transfer Engine is reachable from inside the sandbox).
 - [ ] The servo RPM shows a real page; scroll and pinch through Servo's own
       touch pipeline.
 - [ ] Frame statistics overlay reads well under 16.7 ms for an article page.

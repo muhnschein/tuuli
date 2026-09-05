@@ -472,20 +472,25 @@ Budget failures are release blockers for M3, not M2.
 
 ### 12.2 RPM
 
-- `tuuli-browser` — app with the mock engine, QML, Silica UI, `.desktop`, sailjail profile; built on
-  the SDK target from vendored crates.
-- `tuuli-browser-servo` — the same binary with libservo statically linked (`Provides`/`Conflicts:
-  tuuli-browser`); versioned to Tuuli, with the pinned Servo release recorded in the spec.
-- `tuuli-browser-debuginfo` for each.
+- `harbour-tuuli` — the app, QML, Silica UI, `.desktop`, sailjail profile; one package, named as
+  Harbour requires. Built either with the mock engine (inside the SDK, with its Rust 1.75) or with
+  libservo statically linked (cross-compiled against the SDK target root with Servo's toolchain,
+  `rpm/harbour-tuuli.spec --with servo`). The mock build is a development build and is never
+  submitted.
+- `harbour-tuuli-debuginfo`, not shipped.
 
-Two source packages keep engine rebases and UI iteration independently shippable: a rebase rebuilds
-`tuuli-browser-servo` only, and the QML chrome is installed as files by both packages, so UI work never
-needs the engine rebuilt.
+The original split (`tuuli-browser`, `libtuuli-qml`, `libservo`) is gone: with the engine a Rust
+crate there is no C ABI to split a shared `libservo` on, and Harbour permits neither a second
+package with `Conflicts:` nor a shared library outside `/usr/share/<NAME>/lib/`. Engine rebases and
+UI iteration stay independent because the QML chrome is data under `/usr/share/harbour-tuuli/qml`.
 
 ### 12.3 Distribution
 
-**Chum** primary, **OpenRepos** secondary. Not Harbour: bundled non-allowed libraries and a large
-statically-built Rust engine will not pass, and there is no point pretending otherwise.
+**Jolla's Harbour store.** Harbour's rules are a CI gate (`ci/harbour-check.sh` on every push,
+Jolla's own validator on every RPM the `rpm` workflow builds); `docs/HARBOUR.md` records what is
+satisfied and what must be taken to Jolla — chiefly the system libraries a Servo-linked binary needs
+(GStreamer, FreeType, HarfBuzz) that Harbour's allowed-library list does not carry. Chum and OpenRepos
+are not targets. *Amended: the original text ruled Harbour out; see §17.*
 
 ### 12.4 Upstream tracking
 
@@ -561,6 +566,10 @@ statically-built Rust engine will not pass, and there is no point pretending oth
   (layers), §4.2 (basic render loop, painting on the GUI thread), §5.2–5.3 (rendering context, GL
   thread), §12.1–12.2 (toolchain, packages: no `libtuuli-qml`, no shared `libservo`), §12.4, §13,
   §15.4. See `docs/ARCHITECTURE.md` for the reasoning.
+- **Harbour (2026-09).** The store is Jolla's Harbour, not Chum or OpenRepos. Amended: §12.2 (one
+  `harbour-tuuli` package, no `Conflicts:`), §12.3, and the package name, install paths, sailjail
+  names (`harbour-tuuli`/`harbour-tuuli`) and linker flags Harbour dictates. `docs/HARBOUR.md` lists
+  the rules met and the questions open.
 - **Paths.** Sailjail confines the app to `~/.local/share/org.tuuli/browser/` and siblings (from the
   `.desktop` organisation/application names); read `~/.local/share/tuuli/` in §8.4 with that
   substitution.

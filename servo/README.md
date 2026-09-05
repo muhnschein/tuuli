@@ -7,8 +7,8 @@ workspace at the repository root.
 |---|---|
 | `SERVO_TAG` | the pinned Servo release; `backend/Cargo.toml` pins the same tag as `tag = "v<SERVO_TAG>"` |
 | `backend/` | `tuuli-servo-backend`: `ServoEngine`/`ServoWebView`, the `tuuli_core::engine` traits over libservo's Rust API |
-| `app/` | `tuuli-browser-servo`: the `tuuli-browser` binary linked with the backend (`tuuli_browser::run` + `create_engine`) |
-| `build.sh` | cross-compiles `app/` for aarch64 SFOS on the SDK host and packs the tarballs `rpm/tuuli-browser-servo.spec` installs |
+| `app/` | `tuuli-browser-servo`: the `harbour-tuuli` binary linked with the backend (`tuuli_browser::run` + `create_engine`) |
+| `build.sh` | cross-compiles `app/` for aarch64 SFOS against the SDK target root (`--sysroot`, or a local SDK) and packs the tarball `rpm/harbour-tuuli.spec --with servo` installs; the `rpm` workflow runs it |
 | `patches/` | the public patch queue on top of the tag (`series`; empty) |
 
 ## Why these are not workspace members
@@ -37,6 +37,6 @@ listed in `docs/UPSTREAM.md`; nothing is worked around locally.
 ## Running with the mock engine instead
 
 The Servo binary accepts `--mock-engine` (or `TUULI_ENGINE=mock` in the
-environment) and then behaves exactly like the `tuuli-browser` package,
-which is useful for telling engine problems from chrome problems on a
-device.
+environment) and then behaves exactly like the mock-engine build of the
+package, which is useful for telling engine problems from chrome problems
+on a device.

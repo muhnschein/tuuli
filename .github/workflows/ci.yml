@@ -1,19 +1,33 @@
-name: CI
+name: ci
 
+# `main` only, plus the branch this tree is developed on until main exists;
+# a bare `push:` beside `pull_request:` runs everything twice.
 on:
   push:
-    branches: [main]
+    branches: [main, "claude/**"]
   pull_request:
+  workflow_dispatch:
+
+# A new push supersedes the run in flight.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  host:
+  # Lints, the core's unit tests, and the Qt layer's smoke test -- headless,
+  # then through the real FBO render path under Xvfb + Mesa.
+  test:
     name: Host build and tests
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Qt and tools
         run: |
           sudo apt-get update
@@ -25,35 +39,92 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Format
-        run: cargo fmt --all --check
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Build
-        run: cargo build --workspace
-      - name: Test (headless)
-        run: QT_QPA_PLATFORM=offscreen cargo test --workspace
-      - name: Smoke test with the real render path (Xvfb + Mesa)
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo build --workspace
+      - run: cargo test --workspace
+        env:
+          QT_QPA_PLATFORM: offscreen
+      - name: Smoke test with the real render path
         run: xvfb-run -a -s "-screen 0 1080x2260x24" env QT_QPA_PLATFORM=xcb LIBGL_ALWAYS_SOFTWARE=1 cargo test -p tuuli-browser --test smoke -- --nocapture
-      - name: QML syntax
-        run: find src/qml -name '*.qml' -print0 | xargs -0 qmllint
-      - name: Tooling
+      - run: ./ci/qml-lint.sh
+
+  # The device toolchain floor: the Sailfish SDK ships Rust 1.75.0 and
+  # builds the mock-engine package with it (rpm/harbour-tuuli.spec).
+  msrv:
+    name: Rust 1.75 (the SDK's)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y --no-install-recommends qtbase5-dev qtdeclarative5-dev qt5-qmake libqt5opengl5-dev g++ pkg-config
+      - run: rustup toolchain install 1.75.0 --profile minimal
+      - run: cargo +1.75.0 check --workspace --all-targets
+      # Cargo.lock must stay v3 for that cargo.
+      - run: ./ci/check-lockfile.sh
+
+  # What decides whether the RPM installs and the launcher works; none of
+  # it is reachable from `cargo test`.
+  packaging:
+    name: Packaging lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y --no-install-recommends rpm desktop-file-utils shellcheck file python3
+      # Strict: a checker that is not installed fails here, so the job
+      # cannot quietly stop checking when the apt line above changes.
+      - run: ./ci/packaging-lint.sh
+        env:
+          PACKAGING_LINT_STRICT: 1
+      - name: Perf budget tooling
         run: |
-          python3 tools/make-icons.py
-          git diff --exit-code -- icons || (echo "icons out of date; run tools/make-icons.py" && exit 1)
           printf '{"kind":"start","cold":true,"first_paint_ms":900}\n' > perf.log
           python3 tools/perf/run-budgets.py perf.log || true
 
+  # What Harbour would reject, caught before it is written rather than at
+  # intake.  `sfdk check -s harbour` on the real RPM is the authority and
+  # runs in rpm.yml; this asks the same questions of the sources, and is
+  # mandatory because the answers only get more expensive to change.
+  # docs/HARBOUR.md.
+  harbour:
+    name: Harbour rules (source check)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update
+      # rpm for rpmspec (the %files layout), file for the icons, binutils
+      # for the binary's symbols, Qt to build the binary.
+      - run: sudo apt-get install -y --no-install-recommends rpm file binutils qtbase5-dev qtdeclarative5-dev qt5-qmake libqt5opengl5-dev g++ pkg-config
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # 1.6.1 and 1.7 read the linked binary: which libraries it needs,
+      # and that main() is exported.  Debug is enough -- both are settled
+      # by the link, not the optimisation level.
+      - run: cargo build -p tuuli-browser
+      # The gate itself, then the proof that the gate still bites.
+      - run: ./ci/harbour-check.sh
+        env:
+          HARBOUR_CHECK_STRICT: 1
+      - run: ./ci/harbour-check-selftest.sh
+      # The vendored qmetaobject is what keeps QtWidgets out of the binary,
+      # so what it contains is a Harbour question too.
+      - run: ./ci/vendor-check.sh
+
+  # Type-checks the libservo backend against the pinned tag.  Resolving
+  # servo/backend clones Servo, which is why it is not in the workspace and
+  # runs only here, on pushes.
   servo-backend-check:
-    # Type-checks the libservo backend against the pinned tag.  Resolving
-    # servo/backend clones Servo, which is why it is not in the workspace
-    # and runs only here, on a schedule-sized budget.
     name: libservo backend check (pinned tag)
     runs-on: ubuntu-24.04
     if: github.event_name == 'push'
     continue-on-error: true
+    timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@stable
       - name: Servo build dependencies
         run: |
@@ -62,35 +133,4 @@ jobs:
             clang llvm python3 pkg-config libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
             libfontconfig1-dev libfreetype-dev libharfbuzz-dev libegl1-mesa-dev libgles2-mesa-dev \
             libdbus-1-dev libssl-dev libudev-dev
-      - name: cargo check
-        run: cargo check --manifest-path servo/backend/Cargo.toml
-
-  sailfish:
-    # Builds the mock-engine RPM on the real SDK target: the only place the
-    # Qt 5.6 API constraint (spec 3.2) is actually enforced.
-    name: Sailfish OS RPM (aarch64, mock engine)
-    runs-on: ubuntu-24.04
-    container:
-      image: ghcr.io/sailfishos-chum/sailfish-platform-sdk:latest
-      options: --user root
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build RPM
-        shell: bash
-        run: |
-          set -e
-          TARGET=$(sdk-assistant list 2>/dev/null | grep -i aarch64 | head -1 | awk '{print $1}' || true)
-          if [ -z "$TARGET" ]; then echo "no aarch64 target in this image; skipping"; exit 0; fi
-          mkdir -p ~/rpmbuild/SOURCES
-          tools/vendor.sh ~/rpmbuild/SOURCES
-          sb2 -t "$TARGET" -m sdk-install -R zypper --non-interactive in -y \
-            rust cargo gcc-c++ desktop-file-utils qt5-qmake qt5-qtcore-devel qt5-qtgui-devel \
-            qt5-qtdeclarative-devel qt5-qtdbus-devel qt5-qtwidgets-devel libsailfishapp-devel || true
-          sb2 -t "$TARGET" rpmbuild -ba rpm/tuuli-browser.spec
-      - name: Upload RPMs
-        uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: rpms-aarch64-mock
-          path: ~/rpmbuild/RPMS/**/*.rpm
-          if-no-files-found: ignore
+      - run: cargo check --manifest-path servo/backend/Cargo.toml

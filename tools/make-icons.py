@@ -4,7 +4,7 @@
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 """Renders the launcher icon (a wind mark; "tuuli" is Finnish for wind) at
 the Sailfish launcher sizes without any image library, so the icons can be
-regenerated anywhere.  Output: icons/<N>x<N>/tuuli-browser.png"""
+regenerated anywhere.  Output: icons/<N>x<N>/harbour-tuuli.png"""
 
 import math
 import os
@@ -114,9 +114,12 @@ def render(size):
 
 
 def main():
-    root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "icons")
+    # An output directory may be given (ci/packaging-lint.sh regenerates
+    # into a scratch copy to compare); the default is the tree's icons/.
+    root = sys.argv[1] if len(sys.argv) > 1 else \
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "icons")
     for size in SIZES:
-        write_png(os.path.join(root, "%dx%d" % (size, size), "tuuli-browser.png"), size, render(size))
+        write_png(os.path.join(root, "%dx%d" % (size, size), "harbour-tuuli.png"), size, render(size))
         print("wrote %dx%d" % (size, size))
     return 0
 

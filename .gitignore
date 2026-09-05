@@ -18,3 +18,8 @@ SRPMS/
 __pycache__/
 *.pyc
 .cache/
+# rpm workflow inputs and outputs
+rpm/*.tar.xz
+rpm/*.tar.gz
+RPMS/
+.mb2/

@@ -9,7 +9,7 @@
 
 Both directories hold <corpus id>.png captured on the device (the app
 writes them to <cache>/screenshots/ when Performance logging is on and the
-corpus is loaded via `tuuli-browser --capture-corpus`).  A page fails when
+corpus is loaded via `harbour-tuuli --capture-corpus`).  A page fails when
 the fraction of differing pixels (per-channel delta > 16/255) exceeds the
 threshold.  Only 8-bit RGB/RGBA non-interlaced PNGs are understood; that is
 what the app writes.  No image library required.

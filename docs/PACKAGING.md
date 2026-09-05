@@ -1,64 +1,65 @@
 # Packaging
 
-Spec 12.2 originally asked for `tuuli-browser`, `libtuuli-qml`, `libservo`
-and `tuuli-browser-debuginfo`.  With the engine consumed as a Rust crate
-there is no C ABI to split a shared `libservo` on and no Qt Quick plugin:
-Rust has no stable dylib ABI, and a `cdylib` would reintroduce the C ABI
-the design dropped.  The engine is therefore statically linked into the
-`tuuli-browser` binary, and the spec's independence requirement (engine
-rebases and UI iteration shipping separately) is met by two source
-packages instead:
+Tuuli is packaged for **Jolla's Harbour store**; [HARBOUR.md](HARBOUR.md)
+is the map of what that constrains and what is still open.  Chum and
+OpenRepos are not targets.
 
-| Spec file | Binary RPMs | Engine | Built |
+## One spec, two engines
+
+`rpm/harbour-tuuli.spec` builds one package, `harbour-tuuli`:
+
+| Mode | Engine | Binary built | By |
 |---|---|---|---|
-| `rpm/tuuli-browser.spec` | `tuuli-browser`, `tuuli-browser-debuginfo` | mock | on the SDK target with cargo, from vendored crates |
-| `rpm/tuuli-browser-servo.spec` | `tuuli-browser-servo` (`Provides`/`Conflicts: tuuli-browser`), debuginfo | Servo (`%servo_tag`) | from the tarball `servo/build.sh` produces, or `--with from_source` |
+| default | mock | `cargo build -p tuuli-browser --features sailfish` inside the SDK target, with the SDK's Rust 1.75 | `rpm.yml`, engine `mock` |
+| `--with servo` | Servo | `servo/app`, cross-compiled by `servo/build.sh` with Servo's toolchain against the SDK target root, installed from `rpm/harbour-tuuli-servo-<version>-<arch>.tar.xz` | `rpm.yml`, engine `servo` |
 
-The QML chrome is installed as files by both packages
-(`/usr/share/tuuli-browser/qml`), so UI iteration on a device never needs
-the engine rebuilt: edit the files in place or reinstall the mock package.
-An engine rebase rebuilds `tuuli-browser-servo` only.
+Spec 12.2 originally asked for `tuuli-browser`, `libtuuli-qml`, `libservo`
+and a debuginfo package.  With the engine consumed as a Rust crate there is
+no C ABI to split a shared `libservo` on and no Qt Quick plugin, and
+Harbour permits neither a second package with `Conflicts:` nor a shared
+library outside `/usr/share/<NAME>/lib/`.  So the engine is statically
+linked into the one binary, the two builds share a package name, and the
+independence the spec wanted (engine rebases and UI iteration shipping
+separately) comes from the QML chrome being data files under
+`/usr/share/harbour-tuuli/qml` — editable in place on a device — and from
+the mock build being a minutes-long SDK job while the Servo build is an
+hours-long cross-compile.
 
-## tuuli-browser (mock engine)
+The mock package is a development build.  It is never submitted.
 
-`Source0` is the git archive and `Source1` the `cargo vendor` tarball;
-`tools/vendor.sh` makes both.  The spec unpacks the vendor tree, writes a
-`.cargo/config.toml` that redirects crates.io to it and builds
-`cargo build --release --offline --frozen -p tuuli-browser --features
-sailfish`.  `QMAKE` points qttypes at the target's Qt.  CI runs exactly
-this on the SDK target, which is the only place the Qt 5.6 constraint
-(spec 3.2) is enforced; it is also a legitimate install for UI iteration
-on a device.
+## What the package contains
 
-## tuuli-browser-servo
+    /usr/bin/harbour-tuuli
+    /usr/share/harbour-tuuli/qml/**          the Silica chrome
+    /usr/share/harbour-tuuli/filters/README.md
+    /usr/share/harbour-tuuli/LICENSE
+    /usr/share/applications/harbour-tuuli.desktop
+    /usr/share/icons/hicolor/{86x86,108x108,128x128,172x172}/apps/harbour-tuuli.png
 
-- default: installs `bin/tuuli-browser` from
-  `tuuli-browser-servo-<version>-aarch64.tar.xz` (`Source1`), the output
-  of `servo/build.sh`.  This is how development builds are made.
-- `--with from_source`: builds `servo/app` with cargo inside the target
-  from the git archive (`Source0`) and the vendored crates of the Servo
-  dependency tree (`Source2`, also from `servo/build.sh`).  This is the
-  mode Chum/OBS needs for reproducibility; it needs `rust`, `cargo`,
-  `clang` and `llvm` in the target and a very patient build host.
-  Whether the target's toolchain can build SpiderMonkey at all is an M0
-  question (spec 12.1).
+Nothing else: those are the four locations Harbour allows.  `Requires:` is
+`sailfishsilica-qt5` alone — unversioned, because the validator rejects
+version operators, and alone because Transfer Engine and `Sailfish.Share`
+are reached through D-Bus and a QML import that every image carries and
+neither has an allowed package to name.
 
-The package pulls in `gstreamer1.0-droid`, `fontconfig` and
-`ca-certificates` because the engine uses the system decoders, fonts and
-CA bundle (spec 8).
+## Building
 
-## Distribution
-
-Chum primary, OpenRepos secondary.  Not Harbour (spec 12.3): the engine
-bundles non-allowed libraries and the packages are far outside Harbour's
-rules.  The store descriptions must carry the threat-model disclosure from
-[THREAT_MODEL.md](THREAT_MODEL.md).
+`.github/workflows/rpm.yml` is the supported path: dispatch it from the
+Actions tab (engine, arch, SDK version) or push a `v*` or `build-*` tag.
+It runs `mb2` inside the pinned `coderus/sailfishos-platform-sdk` image as
+that image's own build user, stamps `Release: 1.<run number>` so every
+build installs over the last, uploads the RPM, and then runs Jolla's
+validator on it.  [BUILDING.md](BUILDING.md) has the same steps for a
+local SDK.
 
 ## Desktop file
 
-`src/app/tuuli-browser.desktop` declares no `MimeType` and no
+`src/app/harbour-tuuli.desktop` declares no `MimeType` and no
 `x-scheme-handler`: Tuuli does not register as a URL handler before M4
-(spec N1).  `Exec` takes no `%U` for the same reason; `tuuli-browser
+(spec N1).  `Exec` takes no `%U` for the same reason; `harbour-tuuli
 <url>` from a shell still works.  The `[X-Sailjail]` section is the
 sandbox profile; `Location`, `Camera` and `Microphone` are added only with
-the milestone that uses them (spec 9.1).
+the milestone that uses them (spec 9.1).  `OrganizationName` and
+`ApplicationName` are both the package name, which is what libsailfishapp
+sets on the application object and what `crates/tuuli-core/src/paths.rs`
+builds the data path from: `~/.local/share/harbour-tuuli/harbour-tuuli/`.

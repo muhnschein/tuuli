@@ -4,12 +4,15 @@
 
 //! Where Tuuli keeps its data.  Sailjail permits `~/.local/share/<Org>/<App>`
 //! and siblings for the `OrganizationName`/`ApplicationName` declared in
-//! the `.desktop` file (spec 9.1), so that is where everything goes.
+//! the `.desktop` file (spec 9.1), so that is where everything goes.  Both
+//! are the package name, as libsailfishapp itself sets them and as
+//! `src/app/harbour-tuuli.desktop` declares; `ci/harbour-check.sh` (2.5)
+//! fails a rename on one side only.
 
 use std::path::{Path, PathBuf};
 
-pub const ORGANIZATION: &str = "org.tuuli";
-pub const APPLICATION: &str = "browser";
+pub const ORGANIZATION: &str = "harbour-tuuli";
+pub const APPLICATION: &str = "harbour-tuuli";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AppPaths {
@@ -96,9 +99,9 @@ mod tests {
     #[test]
     fn xdg_layout_uses_sailjail_suffix() {
         let p = AppPaths::xdg();
-        assert!(p.data_dir.ends_with("org.tuuli/browser"));
-        assert!(p.config_dir.ends_with("org.tuuli/browser"));
-        assert!(p.cache_dir.ends_with("org.tuuli/browser"));
+        assert!(p.data_dir.ends_with("harbour-tuuli/harbour-tuuli"));
+        assert!(p.config_dir.ends_with("harbour-tuuli/harbour-tuuli"));
+        assert!(p.cache_dir.ends_with("harbour-tuuli/harbour-tuuli"));
         assert!(p.session_file().ends_with("session.json"));
     }
 }

@@ -1,6 +1,6 @@
 # Manual device matrix
 
-Run before every Chum release (spec 13) on the Jolla Phone (2026), 8 GB
+Run before every Harbour submission (spec 13) on the Jolla Phone (2026), 8 GB
 SKU.  Community ports are unsupported; note results from them separately.
 
 Record the build (`Browser.version`, engine tag), device software version

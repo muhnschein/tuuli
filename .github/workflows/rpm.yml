@@ -1,0 +1,296 @@
+# Builds a device RPM inside the Sailfish SDK.
+#
+# Not part of `ci.yml`: it pulls a multi-gigabyte SDK image and, with the
+# Servo engine, builds Servo, which is hours of runner time nobody wants on
+# every push.  Run it from the Actions tab when a package is wanted, or on
+# a tag.  Modelled on Postivene's rpm.yml (same author), whose comments
+# record what each step cost to learn.
+#
+# Two engines, one package name (rpm/harbour-tuuli.spec):
+#
+#   mock   cargo inside the SDK target, with the Rust the SDK ships.  The
+#          whole chrome with placeholder content; minutes.  Answers M0's
+#          chrome, sailjail and paths questions on a device.
+#   servo  Servo cannot be built by the SDK's Rust, so servo/build.sh
+#          cross-compiles it on the runner against the target root lifted
+#          out of the SDK image, and the spec installs that binary.  Hours,
+#          and the first runs are M0's engine-build spike: expect to read
+#          the log.  Answers the WebRender-on-Mali and frame-rate items.
+#
+# The SDK is what makes the result runnable on a phone: the app links
+# against the target's Qt 5.6 and glibc, and a host-built binary has
+# neither.  See docs/BUILDING.md.
+name: rpm
+
+on:
+  workflow_dispatch:
+    inputs:
+      engine:
+        description: Engine to link
+        type: choice
+        options: [mock, servo]
+        default: mock
+      arch:
+        description: >
+          Device architecture.  aarch64 only: the Jolla Phone is the target
+          (spec 3.1) and Servo is not built for armv7hl.
+        type: choice
+        options: [aarch64]
+        default: aarch64
+      sfos_version:
+        description: >
+          Sailfish SDK version to build against.  5.2 is the Jolla Phone's
+          baseline and the floor this project supports; Harbour also
+          requires a binary to link __libc_start_main@GLIBC_2.34, which
+          only a 5.x SDK's glibc provides.  An older SDK builds a package
+          that runs on older phones and that Harbour rejects.
+        type: string
+        default: "5.2.0.15"
+  push:
+    # `v*` for a release.  `build-*` is a throwaway handle for running
+    # this before it reaches the default branch, since workflow_dispatch
+    # only becomes available once a workflow is on it.
+    tags: ["v*", "build-*"]
+
+permissions:
+  contents: read
+
+jobs:
+  rpm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      ENGINE: ${{ inputs.engine || 'mock' }}
+      ARCH: ${{ inputs.arch || 'aarch64' }}
+      SFOS: ${{ inputs.sfos_version || '5.2.0.15' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # By digest, not tag.  The SDK image is a third party's, it is run
+      # privileged below with the checkout mounted read-write, and a tag
+      # can be repointed at any content by whoever owns it.  To add an SDK
+      # version: pull the tag once, read the digest with
+      # `docker inspect --format '{{index .RepoDigests 0}}'`, add a line.
+      #
+      # The version is also checked for shape first: it is free text from
+      # the dispatch form and is spliced into the artifact name below.
+      - name: Resolve the SDK image
+        run: |
+          [[ $SFOS =~ ^[0-9]+(\.[0-9]+){3}$ ]] || {
+            echo "::error::sfos_version '$SFOS' is not a dotted version"; exit 1; }
+          case "$SFOS" in
+            5.2.0.15) digest=sha256:e7c4379393b17ee63d7f7443ce9930c315a61fdb2e732016346ccbe8c934435e ;;
+            *) echo "::error::no pinned digest for coderus/sailfishos-platform-sdk:$SFOS; add one to rpm.yml"
+               exit 1 ;;
+          esac
+          echo "IMAGE=coderus/sailfishos-platform-sdk@$digest" >> "$GITHUB_ENV"
+
+      # A Servo build needs the room: the SDK image, a copy of the target
+      # root and Servo's own target directory together exceed what a
+      # runner has free by default.
+      - name: Make room for the engine build
+        if: env.ENGINE == 'servo'
+        run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/.ghcup
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          df -h / | tail -1
+
+      - name: Pull the Sailfish SDK
+        run: docker pull "$IMAGE"
+
+      # The image ships one target per architecture, named by the SDK's own
+      # convention.  Asked for rather than assumed, so a version whose
+      # naming differs fails here with the list rather than deep inside
+      # rpmbuild.
+      - name: Resolve the build target
+        run: |
+          targets=$(docker run --rm "$IMAGE" sb2-config -l 2>/dev/null || true)
+          echo "available targets:"; echo "$targets"
+          target=$(echo "$targets" | grep -- "-$ARCH\$" | tail -1)
+          if [ -z "$target" ]; then
+            echo "::error::no $ARCH target in the $SFOS SDK image; see the list above"
+            exit 1
+          fi
+          echo "Building against $target"
+          echo "TARGET=$target" >> "$GITHUB_ENV"
+
+      # Every build must be its own package: the spec pins Version and
+      # Release and mb2 runs with -X, so without this every build is
+      # harbour-tuuli-0.1.0-1 and `rpm -U` on a phone refuses it as already
+      # installed.  The run number is monotonic, so each build upgrades the
+      # last.  Digits and periods only: Harbour rejects any other character
+      # in Release, so the short SHA goes into the artifact name instead.
+      - name: Stamp the build so each one is its own package
+        run: |
+          short=$(git rev-parse --short HEAD)
+          release="1.${GITHUB_RUN_NUMBER}"
+          sed -i "s/^Release:.*/Release:    ${release}/" rpm/harbour-tuuli.spec
+          grep '^Version:\|^Release:' rpm/harbour-tuuli.spec
+          echo "SHORT_SHA=$short" >> "$GITHUB_ENV"
+          echo "RPM_RELEASE=$release" >> "$GITHUB_ENV"
+
+      # Running as root is explicitly wrong -- sdk-manage refuses, saying it
+      # cannot determine the Mer SDK user -- so the build stays as the
+      # image's own mersdk, and the tree has to belong to it.
+      - name: Hand the checkout to the SDK's build user
+        run: |
+          uid=$(docker run --rm "$IMAGE" id -u)
+          gid=$(docker run --rm "$IMAGE" id -g)
+          home=$(docker run --rm "$IMAGE" sh -c 'echo $HOME')
+          echo "SDK builds as uid=$uid gid=$gid, HOME=$home"
+          echo "SDK_UID=$uid" >> "$GITHUB_ENV"
+          echo "SDK_GID=$gid" >> "$GITHUB_ENV"
+          echo "BUILDDIR=$home/harbour-tuuli" >> "$GITHUB_ENV"
+          sudo chown -R "$uid:$gid" "$PWD"
+
+      # Build scripts and proc-macros are compiled for the SDK's own i686
+      # and linked in sb2's *host* mode, where /usr is the SDK filesystem
+      # rather than the target -- so ld looks for the i686 rustlib under
+      # /usr/lib/rustlib, and the SDK ships it under /srv/mer instead.
+      # Lifted out as root here and bind-mounted into place below, which
+      # needs no privilege inside the build at all.
+      - name: Put the host rustlib where the linker looks
+        if: env.ENGINE == 'mock'
+        run: |
+          mkdir -p /tmp/rustlib
+          docker run --rm --user root -v /tmp/rustlib:/out \
+            "$IMAGE" \
+            bash -c '
+              host=i686-unknown-linux-gnu
+              src=$(ls -d /srv/mer/toolings/*/usr/lib/rustlib/$host \
+                          /srv/mer/targets/*/usr/lib/rustlib/$host \
+                          2>/dev/null | head -1)
+              [ -n "$src" ] || { echo "no host rustlib in this image" >&2; exit 1; }
+              echo "lifting $src"
+              cp -a "$src" /out/'
+          ls -d /tmp/rustlib/i686-unknown-linux-gnu
+
+      # The Servo build happens on the runner, not in the SDK: the SDK's
+      # Rust is 1.75 and Servo needs a current one, and Rust does not mix
+      # compiler versions in one link.  What it needs from the SDK is the
+      # target root as a sysroot -- Qt, libsailfishapp, glibc, and the
+      # development headers of every C library Servo's crates bind.  Those
+      # headers are installed into the target first, in the same container
+      # run that copies it out, because each `docker run` starts from the
+      # pristine image.  A package the repository lacks is a warning, not a
+      # stop: the build's own error names what is really missing.
+      - name: Lift the target root out of the SDK as a sysroot
+        if: env.ENGINE == 'servo'
+        run: |
+          mkdir -p /tmp/sysroot && chmod 777 /tmp/sysroot
+          docker run --rm --privileged -e TARGET -v /tmp/sysroot:/out "$IMAGE" \
+            /bin/bash -c '
+              set -e
+              for p in libsailfishapp-devel qt5-qtcore-devel qt5-qtgui-devel \
+                       qt5-qtdeclarative-devel qt5-qtdbus-devel \
+                       gstreamer1.0-devel gstreamer1.0-plugins-base-devel \
+                       fontconfig-devel freetype-devel harfbuzz-devel \
+                       dbus-devel openssl-devel zlib-devel glib2-devel \
+                       libxml2-devel libhybris-devel libhybris-libEGL-devel \
+                       libhybris-libGLESv2-devel wayland-devel libxkbcommon-devel; do
+                sb2 -t "$TARGET" -m sdk-install -R zypper --non-interactive in -y --no-recommends "$p" \
+                  || echo "::warning::$p is not installable in the target; the engine build may want it"
+              done
+              root=$(sb2-config -t 2>/dev/null || true)
+              [ -d "$root" ] || root="/srv/mer/targets/$TARGET"
+              echo "copying $root"
+              cp -a "$root/." /out/'
+          ls /tmp/sysroot/usr/include/qt5/QtCore/qglobal.h /tmp/sysroot/usr/include/sailfishapp/sailfishapp.h
+          df -h / | tail -1
+
+      # servo/build.sh reads Servo's pinned rust-toolchain.toml at the tag
+      # and installs it through rustup; clang and lld come from apt.
+      - name: Cross-compile the Servo-linked binary
+        if: env.ENGINE == 'servo'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang lld llvm python3 pkg-config cmake xz-utils curl
+          sudo chown -R "$(id -u):$(id -g)" "$PWD"
+          servo/build.sh --sysroot /tmp/sysroot --jobs "$(nproc)"
+          cp servo/out/harbour-tuuli-servo-*-aarch64.tar.xz rpm/
+          ls -la rpm/
+          sudo chown -R "$SDK_UID:$SDK_GID" "$PWD"
+
+      # Mounted inside the SDK user's home: rpm runs under scratchbox2,
+      # which redirects absolute paths it does not recognise into the
+      # target rootfs, and with the tree anywhere else mb2 writes .mb2/spec
+      # outside while rpm reads inside.  The directory keeps the package's
+      # name: mb2 derives the package from it, so rpm/harbour-tuuli.spec is
+      # found.  `-X` because build-init otherwise asks `git describe` for a
+      # version, finds no tags, and stops before writing the spec.
+      # `--no-check`: the spec has no %check.  Additional Sources (the
+      # Servo tarball) are read from rpm/, which is where mb2 looks.
+      #
+      # `--privileged` is what the SDK image's own instructions run it
+      # with.  TARGET and ENGINE go in as environment variables and the
+      # script is single-quoted, so nothing the image printed above is
+      # spliced into shell text.
+      - name: Build the RPM
+        run: |
+          mounts=(-v "$PWD:$BUILDDIR" -w "$BUILDDIR")
+          if [ "$ENGINE" = mock ]; then
+            mounts+=(-v /tmp/rustlib/i686-unknown-linux-gnu:/usr/lib/rustlib/i686-unknown-linux-gnu:ro)
+          fi
+          docker run --rm --privileged -e TARGET -e ENGINE "${mounts[@]}" "$IMAGE" \
+            /bin/bash -c 'set -e
+              with=()
+              [ "$ENGINE" = servo ] && with=(-- --with servo)
+              mb2 -t "$TARGET" -X build-init
+              mb2 -t "$TARGET" -X build-requires "${with[@]}" ||
+                echo "::warning::mb2 build-requires failed; the build may stop on a missing BuildRequires"
+              mb2 -t "$TARGET" -X build --no-check "${with[@]}"'
+
+      - name: Show mb2's state
+        if: failure()
+        run: ls -la .mb2 2>/dev/null || true; tail -60 .mb2/*.log 2>/dev/null || true
+
+      # Back to the runner, or the upload cannot read what was built.
+      - name: Take the tree back
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" "$PWD"
+
+      - name: Show what was built
+        run: |
+          find RPMS -name '*.rpm' -print -exec rpm -qip {} \; 2>/dev/null || \
+            find . -name '*.rpm' -print
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: harbour-tuuli-${{ env.ENGINE }}-${{ env.ARCH }}-sfos${{ env.SFOS }}-${{ env.SHORT_SHA }}
+          path: |
+            RPMS/**/*.rpm
+            **/*.rpm
+          if-no-files-found: error
+          retention-days: 30
+
+      # The debug info of the Servo binary is worth keeping beside the RPM:
+      # a backtrace from the device is only readable with it.
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: env.ENGINE == 'servo'
+        with:
+          name: harbour-tuuli-servo-debug-${{ env.ARCH }}-sfos${{ env.SFOS }}-${{ env.SHORT_SHA }}
+          path: servo/out/harbour-tuuli-servo-*.tar.xz
+          if-no-files-found: warn
+          retention-days: 30
+
+      # The authority.  ci/harbour-check.sh answers the same questions from
+      # the sources on every pull request, but only this sees the built
+      # package -- the Requires and Provides rpm generated, the stripped
+      # binary's symbols, the libraries the engine really links.
+      #
+      # After the upload, deliberately: a package that Harbour would reject
+      # is still a package worth having on a phone, and this step failing
+      # must not be what stops you installing it.  Findings recorded in
+      # ci/harbour/waivers.conf do not fail it; anything else does.  The
+      # first Servo build is expected to fail here, and its list is the
+      # list to take to Jolla (docs/HARBOUR.md).
+      - name: Validate the RPM against Harbour's rules
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils rpm cpio file
+          rpm=$(find . -name 'harbour-tuuli-*.rpm' ! -name '*debug*' \
+                       ! -name '*.src.rpm' | head -1)
+          [ -n "$rpm" ] || { echo "::error::no RPM to validate"; exit 1; }
+          echo "Validating $rpm"
+          ./ci/harbour-validate-rpm.sh "$rpm"

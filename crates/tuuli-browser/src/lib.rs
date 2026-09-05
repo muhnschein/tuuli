@@ -44,7 +44,10 @@ fn apply_early_environment(prefs: &Preferences) {
         std::env::set_var("PULSE_PROP_media.role", "x-maemo");
     }
     if std::env::var_os("PULSE_PROP_application.process.binary").is_none() {
-        std::env::set_var("PULSE_PROP_application.process.binary", "tuuli-browser");
+        std::env::set_var(
+            "PULSE_PROP_application.process.binary",
+            tuuli_core::paths::APPLICATION,
+        );
     }
     if prefs.engine_logging && std::env::var_os("RUST_LOG").is_none() {
         std::env::set_var("RUST_LOG", "info");
@@ -60,7 +63,9 @@ fn create_application(args: &[String]) -> *mut c_void {
     argv.push(std::ptr::null_mut());
     let argc = cargs.len() as i32;
     let argv_ptr = argv.as_mut_ptr();
-    cpp!(unsafe [argc as "int", argv_ptr as "char **"] -> *mut c_void as "QGuiApplication *" {
+    let org = QString::from(tuuli_core::paths::ORGANIZATION);
+    let app_name = QString::from(tuuli_core::paths::APPLICATION);
+    cpp!(unsafe [argc as "int", argv_ptr as "char **", org as "QString", app_name as "QString"] -> *mut c_void as "QGuiApplication *" {
         // QGuiApplication keeps referring to argc/argv: copy them.
         s_argc = argc;
         s_argv = new char *[argc + 1];
@@ -72,9 +77,11 @@ fn create_application(args: &[String]) -> *mut c_void {
         QGuiApplication *app = new QGuiApplication(s_argc, s_argv);
         #endif
         // Must match the sailjail profile (spec 9.1) so data/config/cache
-        // dirs are the ones the sandbox permits.
-        QCoreApplication::setOrganizationName(QStringLiteral("org.tuuli"));
-        QCoreApplication::setApplicationName(QStringLiteral("browser"));
+        // dirs are the ones the sandbox permits: both are the package name,
+        // which is also what SailfishApp::application() sets
+        // (crates/tuuli-core/src/paths.rs, ci/harbour-check.sh 2.5).
+        QCoreApplication::setOrganizationName(org);
+        QCoreApplication::setApplicationName(app_name);
         QObject::connect(app, &QGuiApplication::applicationStateChanged, [](Qt::ApplicationState state) {
             int s = int(state);
             rust!(Tuuli_appStateChanged [s: i32 as "int"] { on_application_state(s) });
@@ -115,11 +122,12 @@ fn view_engine(view: *mut c_void) -> *mut c_void {
 }
 
 fn main_qml_url() -> QString {
-    // On Sailfish the QML is installed under /usr/share/tuuli-browser/;
-    // elsewhere it is read from the source tree (or TUULI_QML_DIR).
+    // On Sailfish the QML is installed under /usr/share/harbour-tuuli/
+    // (the package's own data directory, docs/HARBOUR.md); elsewhere it is
+    // read from the source tree (or TUULI_QML_DIR).
     let installed: QString = cpp!(unsafe [] -> QString as "QString" {
         #ifdef TUULI_SAILFISH
-        return SailfishApp::pathTo(QStringLiteral("qml/tuuli-browser.qml")).toString();
+        return SailfishApp::pathTo(QStringLiteral("qml/harbour-tuuli.qml")).toString();
         #else
         return QString();
         #endif
@@ -129,7 +137,7 @@ fn main_qml_url() -> QString {
     }
     let dir = std::env::var("TUULI_QML_DIR")
         .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../../src/qml").to_string());
-    QString::from(format!("file://{dir}/tuuli-browser.qml"))
+    QString::from(format!("file://{dir}/harbour-tuuli.qml"))
 }
 
 fn show_view(view: *mut c_void, url: QString) {
@@ -153,7 +161,7 @@ pub fn run(engine: Rc<dyn Engine>, args: Vec<String>) -> i32 {
     let app = create_application(&args);
     tuuli_qml::register_types();
     if let Err(e) = tuuli_qml::install(engine, paths, args) {
-        eprintln!("tuuli-browser: {e}");
+        eprintln!("harbour-tuuli: {e}");
         return 1;
     }
     if let Some(proxy) = tuuli_qml::platform::connman_read_proxy() {

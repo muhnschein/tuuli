@@ -14,7 +14,8 @@ fn main() {
     {
         config.flag(f);
     }
-    config.flag("-std=c++17");
+    // gnu++14: the SDK target's GCC and Qt 5.6 headers are happiest there.
+    config.flag("-std=gnu++14");
     config.include(&qt_include_path);
     for module in ["QtCore", "QtGui", "QtQml", "QtQuick"] {
         config.include(format!("{qt_include_path}/{module}"));
@@ -30,7 +31,28 @@ fn main() {
     }
     config.build("src/lib.rs");
     println!("cargo:rustc-link-search={qt_library_path}");
+    harbour_link_args();
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_SAILFISH");
     println!("cargo:rerun-if-env-changed=SAILFISHAPP_INCLUDE_PATH");
     println!("cargo:rerun-if-changed=src");
+}
+
+/// Two link arguments Harbour's validator insists on (docs/HARBOUR.md).
+///
+/// `--dynamic-list`: the silica-qt5 booster `dlopen()`s the binary and looks
+/// `main` up dynamically, and rpmbuild strips `.symtab`, so `main` has to be
+/// in `.dynsym`.  `--dynamic-list` rather than `--export-dynamic-symbol`,
+/// which needs binutils 2.35, or `--export-dynamic`, which exports everything.
+///
+/// `--as-needed`: qttypes links Qt5Widgets unconditionally; with the vendored
+/// qmetaobject no longer using QApplication nothing refers to it, and this
+/// drops the DT_NEEDED entry that would fail the allowed-libraries check.
+fn harbour_link_args() {
+    let list = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("main.dynlist");
+    println!("cargo:rerun-if-changed={}", list.display());
+    println!(
+        "cargo:rustc-link-arg-bins=-Wl,--dynamic-list={}",
+        list.display()
+    );
+    println!("cargo:rustc-link-arg-bins=-Wl,--as-needed");
 }

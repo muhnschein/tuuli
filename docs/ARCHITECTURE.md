@@ -196,13 +196,15 @@ keyboard shows, without resizing the surface.
 ## Paths
 
 Sailjail permits `~/.local/share/<Org>/<App>` and siblings for the
-`OrganizationName`/`ApplicationName` in the `.desktop` file.  With
-`org.tuuli`/`browser` that is `~/.local/share/org.tuuli/browser/`, which is
-what `AppPaths::xdg()` derives and what `QStandardPaths::AppDataLocation`
-would return once the application sets those names.  The spec's
-`~/.local/share/tuuli/` would not be reachable inside the sandbox, so the
-sailjail-derived path is used and the spec text should be read with that
-substitution.
+`OrganizationName`/`ApplicationName` in the `.desktop` file.  Both are the
+package name, `harbour-tuuli` — what libsailfishapp sets on the
+application object, and the Sailfish convention — so the data lives in
+`~/.local/share/harbour-tuuli/harbour-tuuli/`, which is what
+`AppPaths::xdg()` derives from the two constants in `paths.rs` and what
+the application object is named from.  `ci/harbour-check.sh` (2.5) fails
+a rename on one side only.  The spec's `~/.local/share/tuuli/` would not
+be reachable inside the sandbox, so the spec text should be read with
+that substitution.
 
 ## Qt 5.6
 
