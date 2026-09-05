@@ -70,12 +70,18 @@ fn main() {
     // Read off Qt's own configuration: qconfig.h (Qt < 5.8) defines
     // QT_OPENGL_ES_2, qtgui-config.h (Qt >= 5.8) sets the feature.
     // TUULI_LINK_GLESV2=1 forces it (the spec and servo/build.sh set it).
-    let gles = std::env::var("TUULI_LINK_GLESV2").map(|v| v == "1").unwrap_or(false)
-        || ["QtCore/qconfig.h", "QtGui/qtgui-config.h"].iter().any(|h| {
-            std::fs::read_to_string(format!("{qt_include_path}/{h}"))
-                .map(|s| s.contains("#define QT_OPENGL_ES_2") || s.contains("QT_FEATURE_opengles2 1"))
-                .unwrap_or(false)
-        });
+    let gles = std::env::var("TUULI_LINK_GLESV2")
+        .map(|v| v == "1")
+        .unwrap_or(false)
+        || ["QtCore/qconfig.h", "QtGui/qtgui-config.h"]
+            .iter()
+            .any(|h| {
+                std::fs::read_to_string(format!("{qt_include_path}/{h}"))
+                    .map(|s| {
+                        s.contains("#define QT_OPENGL_ES_2") || s.contains("QT_FEATURE_opengles2 1")
+                    })
+                    .unwrap_or(false)
+            });
     if gles {
         println!("cargo:rustc-link-lib=GLESv2");
     }
