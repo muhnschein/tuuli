@@ -191,7 +191,7 @@ jobs:
           docker run --rm --privileged -e TARGET -v /tmp/sysroot:/out "$IMAGE" \
             /bin/bash -c '
               set -e
-              for p in libsailfishapp-devel qt5-qtcore-devel qt5-qtgui-devel \
+              for p in gcc glibc-devel libsailfishapp-devel qt5-qtcore-devel qt5-qtgui-devel \
                        qt5-qtdeclarative-devel qt5-qtdbus-devel \
                        gstreamer1.0-devel gstreamer1.0-plugins-base-devel \
                        fontconfig-devel freetype-devel harfbuzz-devel \
@@ -222,6 +222,8 @@ jobs:
           ls /tmp/sysroot/usr/include/qt5/QtCore/qglobal.h /tmp/sysroot/usr/include/sailfishapp/sailfishapp.h
           ls /tmp/sysroot/usr/include/EGL/egl.h /tmp/sysroot/usr/include/GLES2/gl2.h || echo "::warning::no EGL/GLES headers in the sysroot"
           ls -d /tmp/sysroot/usr/lib64 /tmp/sysroot/usr/lib 2>/dev/null
+          ls -d /tmp/sysroot/usr/lib/gcc/*/* 2>/dev/null || echo "::warning::no GCC installation in the sysroot (crtbegin.o, libgcc)"
+          ls /tmp/sysroot/usr/lib64/crt1.o /tmp/sysroot/usr/lib64/libc.so 2>/dev/null || echo "::warning::no crt1.o/libc.so in the sysroot's lib64"
           # Extracted by the container's root: a few root-only directories
           # (boot, etc/lvm, etc/pki/tls/private) come out unreadable by
           # the runner user.  The copy is ours, so take it over outright.

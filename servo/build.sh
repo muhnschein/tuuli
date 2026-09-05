@@ -98,6 +98,13 @@ fi
 [ -d "$SYSROOT/usr/include/sailfishapp" ] || die "libsailfishapp-devel is not installed in the target"
 LIBDIR="$SYSROOT/usr/lib64"; [ -d "$LIBDIR" ] || LIBDIR="$SYSROOT/usr/lib"
 log "sysroot: $SYSROOT (libdir $LIBDIR)"
+# crtbegin.o, crtend.o and libgcc come from the target's GCC, installed
+# under a triple (aarch64-meego-linux-gnu) clang does not scan for; it is
+# pointed there explicitly.
+GCC_INSTALL="$(ls -d "$SYSROOT"/usr/lib/gcc/aarch64-*-linux-gnu/[0-9]* 2>/dev/null | sort -V | tail -1)"
+[ -n "$GCC_INSTALL" ] || die "no GCC installation under $SYSROOT/usr/lib/gcc (install gcc in the target)"
+[ -f "$GCC_INSTALL/crtbegin.o" ] || die "$GCC_INSTALL has no crtbegin.o"
+log "target gcc: $GCC_INSTALL"
 
 mkdir -p "$OUT" "$HERE/src" "$APP/.cargo"
 
@@ -137,13 +144,18 @@ fi
 # ---- Toolchain -----------------------------------------------------------
 (cd "$APP" && rustup target add "$RUST_TARGET")
 
+# The same flags reach every C/C++ build script (cc, cmake, autoconf) and
+# the final link.  -fuse-ld=lld is in the compile flags too: autoconf's
+# "C compiler works" test links, and the host's GNU ld has no aarch64
+# emulation.
+CROSS_FLAGS="--target=$CLANG_TARGET --sysroot=$SYSROOT --gcc-install-dir=$GCC_INSTALL -fuse-ld=lld"
 export CC_aarch64_unknown_linux_gnu=clang
 export CXX_aarch64_unknown_linux_gnu=clang++
 export AR_aarch64_unknown_linux_gnu=llvm-ar
-export CFLAGS_aarch64_unknown_linux_gnu="--target=$CLANG_TARGET --sysroot=$SYSROOT"
-export CXXFLAGS_aarch64_unknown_linux_gnu="--target=$CLANG_TARGET --sysroot=$SYSROOT"
+export CFLAGS_aarch64_unknown_linux_gnu="$CROSS_FLAGS"
+export CXXFLAGS_aarch64_unknown_linux_gnu="$CROSS_FLAGS"
 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=clang
-export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=--target=$CLANG_TARGET -C link-arg=--sysroot=$SYSROOT -C link-arg=-fuse-ld=lld -C link-arg=-Wl,--as-needed -C link-arg=-L$LIBDIR"
+export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=--target=$CLANG_TARGET -C link-arg=--sysroot=$SYSROOT -C link-arg=--gcc-install-dir=$GCC_INSTALL -C link-arg=-fuse-ld=lld -C link-arg=-Wl,--as-needed -C link-arg=-L$LIBDIR"
 # Qt from the sysroot: qttypes takes these instead of running qmake, which
 # it cannot (the target's qmake is an aarch64 binary).
 export QT_INCLUDE_PATH="$SYSROOT/usr/include/qt5"
@@ -170,6 +182,10 @@ set(CMAKE_C_COMPILER clang)
 set(CMAKE_CXX_COMPILER clang++)
 set(CMAKE_C_COMPILER_TARGET $CLANG_TARGET)
 set(CMAKE_CXX_COMPILER_TARGET $CLANG_TARGET)
+set(CMAKE_C_FLAGS_INIT "$CROSS_FLAGS")
+set(CMAKE_CXX_FLAGS_INIT "$CROSS_FLAGS")
+set(CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=lld")
+set(CMAKE_SHARED_LINKER_FLAGS_INIT "-fuse-ld=lld")
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
