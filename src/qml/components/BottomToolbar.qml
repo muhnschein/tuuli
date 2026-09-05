@@ -73,7 +73,6 @@ DockedPanel {
                        //% "Private"
                        ? qsTrId("tuuli-la-private_label")
                        : (tab && tab.url.toString().length ? tab.url : "")
-                text: activeFocus ? text : (tab ? tab.displayTitle : "")
                 textLeftMargin: Theme.paddingMedium
                 textRightMargin: Theme.paddingMedium
                 EnterKey.enabled: text.length > 0
@@ -83,6 +82,16 @@ DockedPanel {
                     focus = false
                 }
                 onActiveFocusChanged: if (activeFocus) selectAll()
+
+                // The tab's title while idle; the user's text while editing.
+                // A Binding rather than `text: activeFocus ? text : ...`,
+                // which binds text to itself and loops.
+                Binding {
+                    target: urlField
+                    property: "text"
+                    value: tab ? tab.displayTitle : ""
+                    when: !urlField.activeFocus
+                }
             }
 
             IconButton {

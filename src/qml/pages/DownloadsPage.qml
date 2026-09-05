@@ -63,6 +63,7 @@ Page {
                 Label {
                     width: parent.width
                     truncationMode: TruncationMode.Fade
+                    //% "Private"
                     text: model.fileName + (model.isPrivate ? " · " + qsTrId("tuuli-la-private_label") : "")
                 }
                 ProgressBar {

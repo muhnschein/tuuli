@@ -389,7 +389,6 @@ pub struct WebViewItem {
     last_frame_at: Option<Instant>,
     long_press_armed: bool,
     registered: bool,
-    warned_off_thread: bool,
 }
 
 impl Default for WebViewItem {
@@ -444,7 +443,6 @@ impl Default for WebViewItem {
             last_frame_at: None,
             long_press_armed: false,
             registered: false,
-            warned_off_thread: false,
         }
     }
 }
@@ -930,10 +928,13 @@ impl WebViewItemImpl for WebViewItem {
             }
         })
         .is_some();
-        if !on_gui_thread && !self.warned_off_thread {
-            self.warned_off_thread = true;
-            log::error!("WebView rendered off the GUI thread: Tuuli needs QSG_RENDER_LOOP=basic (see docs/ARCHITECTURE.md)");
-            eprintln!("tuuli: WebView rendered off the GUI thread; set QSG_RENDER_LOOP=basic");
+        if self.frameCount == 1 {
+            if on_gui_thread {
+                eprintln!("tuuli: first frame rendered on the GUI thread (basic render loop)");
+            } else {
+                log::error!("WebView rendered off the GUI thread: Tuuli needs QSG_RENDER_LOOP=basic (see docs/ARCHITECTURE.md)");
+                eprintln!("tuuli: WebView rendered off the GUI thread (threaded render loop); the engine cannot initialise");
+            }
         }
         if init_failed_now {
             self.init_failed = true;

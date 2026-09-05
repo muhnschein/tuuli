@@ -73,7 +73,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: sudo apt-get update
-      - run: sudo apt-get install -y --no-install-recommends rpm desktop-file-utils shellcheck file python3
+      - run: sudo apt-get install -y --no-install-recommends rpm desktop-file-utils shellcheck file python3 qttools5-dev-tools
       # Strict: a checker that is not installed fails here, so the job
       # cannot quietly stop checking when the apt line above changes.
       - run: ./ci/packaging-lint.sh

@@ -6,12 +6,12 @@
 #
 # Qt5 packages (Debian/Ubuntu):
 #   apt install qtbase5-dev qtdeclarative5-dev qt5-qmake libqt5opengl5-dev \
-#               qtdeclarative5-dev-tools qml-module-qtquick2 g++ pkg-config \
-#               rpm desktop-file-utils shellcheck file binutils
+#               qtdeclarative5-dev-tools qttools5-dev-tools qml-module-qtquick2 \
+#               g++ pkg-config rpm desktop-file-utils shellcheck file binutils
 # The render-path smoke test also wants xvfb and Mesa (`make smoke`).
 
 .PHONY: check test lint fmt msrv lockfile-lint qml-lint packaging-lint harbour \
-        vendor-check smoke clean
+        vendor-check smoke translations clean
 
 CARGO ?= cargo
 # The Qt layer's smoke test drives a real Qt event loop headless.
@@ -64,6 +64,12 @@ harbour:
 ## proves it (network: fetches the crates.io tarball).
 vendor-check:
 	./ci/vendor-check.sh
+
+## Regenerate the catalog from the QML, and compile it beside the .ts so a
+## source-tree run (TUULI_TRANSLATIONS_DIR=translations) shows real text.
+translations:
+	./scripts/update-translations.sh
+	./scripts/release-translations.sh
 
 ## The FBO render path under Xvfb + Mesa.
 smoke:

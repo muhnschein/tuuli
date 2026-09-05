@@ -71,8 +71,12 @@ Page {
                     label: modelData
                     value: {
                         var d = Browser.permissions.decisionFor(origin, kind)
+                        //% "allowed"
+                        if (d === 1) return qsTrId("tuuli-la-allowed")
+                        //% "denied"
+                        if (d === 2) return qsTrId("tuuli-la-denied")
                         //% "ask"
-                        return d === 1 ? qsTrId("tuuli-la-allowed") : d === 2 ? qsTrId("tuuli-la-denied") : qsTrId("tuuli-la-ask")
+                        return qsTrId("tuuli-la-ask")
                     }
                 }
             }

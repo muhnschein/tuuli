@@ -23,3 +23,5 @@ rpm/*.tar.xz
 rpm/*.tar.gz
 RPMS/
 .mb2/
+# compiled catalogs (scripts/release-translations.sh)
+translations/*.qm

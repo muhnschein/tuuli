@@ -64,6 +64,8 @@ BuildRequires:  pkgconfig(Qt5Quick)
 BuildRequires:  pkgconfig(Qt5DBus)
 BuildRequires:  pkgconfig(sailfishapp)
 %endif
+# lrelease, which compiles the translation catalogs in %%build.
+BuildRequires:  qt5-qttools-linguist
 BuildRequires:  desktop-file-utils
 
 %ifarch %arm
@@ -134,6 +136,10 @@ cargo build \
     --features sailfish
 %endif
 
+# The catalogs: translations/harbour-tuuli.ts (engineering English from the
+# //% comments) and any harbour-tuuli-<lang>.ts, compiled here.
+./scripts/release-translations.sh
+
 %install
 rm -rf %{buildroot}
 
@@ -155,6 +161,10 @@ install -Dm 755 "$builddir/%{name}" %{buildroot}%{_bindir}/%{name}
 # opinion about it.
 (cd src/qml && find . -type f \( -name '*.qml' -o -name '*.js' -o -name qmldir \) -exec \
     install -Dm 644 "{}" "%{buildroot}%{appdatadir}/qml/{}" \; )
+
+# The compiled catalogs, where the application object loads them from.
+(cd translations && find . -type f -name 'harbour-tuuli*.qm' -exec \
+    install -Dm 644 "{}" "%{buildroot}%{appdatadir}/translations/{}" \; )
 
 # Where the user drops cosmetic filter lists (spec 9.3), documented in place.
 install -Dm 644 tools/filters/README.md %{buildroot}%{appdatadir}/filters/README.md

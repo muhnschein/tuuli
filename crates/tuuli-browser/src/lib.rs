@@ -21,6 +21,9 @@ use tuuli_core::prefs::Preferences;
 
 cpp! {{
     #include <QtCore/QCoreApplication>
+    #include <QtCore/QLocale>
+    #include <QtCore/QTranslator>
+    #include <QtCore/QDir>
     #include <QtCore/QUrl>
     #include <QtGui/QGuiApplication>
     #include <QtQml/QQmlEngine>
@@ -83,6 +86,23 @@ fn create_application(args: &[String]) -> *mut c_void {
         // (crates/tuuli-core/src/paths.rs, ci/harbour-check.sh 2.5).
         QCoreApplication::setOrganizationName(org);
         QCoreApplication::setApplicationName(app_name);
+
+        // The catalogs (translations/): the engineering English one, which
+        // turns qsTrId() ids into the //% texts, then the locale's on top.
+        // libsailfishapp installs the same pair itself; doing it here too
+        // costs nothing and keeps a host build readable.
+        QString translations;
+        #ifdef TUULI_SAILFISH
+        translations = SailfishApp::pathTo(QStringLiteral("translations")).toLocalFile();
+        #else
+        translations = QString::fromLocal8Bit(qgetenv("TUULI_TRANSLATIONS_DIR"));
+        #endif
+        if (!translations.isEmpty() && QDir(translations).exists()) {
+            QTranslator *engineering = new QTranslator(app);
+            if (engineering->load(app_name, translations)) app->installTranslator(engineering);
+            QTranslator *locale = new QTranslator(app);
+            if (locale->load(QLocale(), app_name, QStringLiteral("-"), translations)) app->installTranslator(locale);
+        }
         QObject::connect(app, &QGuiApplication::applicationStateChanged, [](Qt::ApplicationState state) {
             int s = int(state);
             rust!(Tuuli_appStateChanged [s: i32 as "int"] { on_application_state(s) });

@@ -124,6 +124,44 @@ else
     skip python3 "install python3"
 fi
 
+# The catalog is generated from the QML, so it is only right if it matches
+# what the QML currently says: a qsTrId() added without an entry shows as
+# a bare id on a phone.  Checked by regenerating a copy.
+if command -v lupdate >/dev/null 2>&1 || command -v lupdate-qt5 >/dev/null 2>&1; then
+    ran=$((ran + 1))
+    fresh=$(mktemp -d)
+    cp "$root"/translations/*.ts "$fresh/"
+    if "$root/scripts/update-translations.sh" "$fresh" >/dev/null 2>&1 &&
+        diff -q "$root/translations/harbour-tuuli.ts" "$fresh/harbour-tuuli.ts" >/dev/null; then
+        echo "packaging-lint: translations/harbour-tuuli.ts is up to date"
+    else
+        diff -u "$root/translations/harbour-tuuli.ts" "$fresh/harbour-tuuli.ts" >&2 || true
+        echo "packaging-lint: FAIL translations/harbour-tuuli.ts is stale; run scripts/update-translations.sh" >&2
+        status=1
+    fi
+    rm -rf "$fresh"
+else
+    skip lupdate "install qttools5-dev-tools"
+fi
+
+# And it compiles: lrelease is what the RPM runs on it, minutes into a
+# build nobody watches.
+if command -v lrelease >/dev/null 2>&1 || command -v lrelease-qt5 >/dev/null 2>&1; then
+    ran=$((ran + 1))
+    qm_dir=$(mktemp -d)
+    if out=$("$root/scripts/release-translations.sh" "$qm_dir" 2>&1) &&
+        ! echo "$out" | grep -qi 'warning'; then
+        echo "packaging-lint: every translations/*.ts compiles cleanly"
+    else
+        echo "$out" >&2
+        echo "packaging-lint: FAIL a catalog does not compile cleanly with lrelease" >&2
+        status=1
+    fi
+    rm -rf "$qm_dir"
+else
+    skip lrelease "install qttools5-dev-tools"
+fi
+
 # Every docs/<name>.md that a comment, a script or a document points at
 # has to exist.
 ran=$((ran + 1))

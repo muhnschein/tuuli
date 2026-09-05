@@ -120,6 +120,7 @@ SilicaFlickable {
                 onClicked: startView.urlActivated(model.url)
                 menu: ContextMenu {
                     MenuItem {
+                        //% "Open in new tab"
                         text: qsTrId("tuuli-me-open_new_tab")
                         onClicked: Browser.openUrl(model.url, false, true)
                     }
