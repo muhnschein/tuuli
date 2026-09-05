@@ -83,13 +83,25 @@ impl TransferEngine for DBusTransferEngine {
         let id = cpp!(unsafe [name as "QString", file as "QString", mime as "QString", expected_size as "qlonglong"] -> i32 as "int" {
             QDBusInterface iface(QString::fromLatin1(kTransferService), QString::fromLatin1(kTransferPath), QString::fromLatin1(kTransferIface), QDBusConnection::sessionBus());
             if (!iface.isValid()) return -1;
-            // Cancel/restart callbacks are served by the browser's own D-Bus
-            // object (org.tuuli.browser.Downloads).
-            QStringList callback;
-            callback << QStringLiteral("org.tuuli.browser") << QStringLiteral("/org/tuuli/browser/downloads") << QStringLiteral("org.tuuli.browser.Downloads");
-            QDBusReply<int> reply = iface.call(QStringLiteral("createDownload"), name,
-                QStringLiteral("icon-launcher-tuuli-browser"), QStringLiteral("icon-s-cloud-download"),
-                file, mime, expected_size, callback, QStringLiteral("cancelTransfer"), QStringLiteral("restartTransfer"));
+            // No cancel/restart callback: that would need the browser to own
+            // a D-Bus name, which sailjail derives from the package name and
+            // which Harbour has no key for.  The Transfers page then shows
+            // the download without a cancel action; cancelling from the
+            // browser still reaches Transfer Engine through finishTransfer.
+            //
+            // createDownload takes nine arguments, and Qt 5.6's
+            // QDBusAbstractInterface::call() stops at eight (the variadic
+            // form is Qt 5.14), so the argument list form.  The icon is the
+            // launcher icon by path: a Harbour app's icon is not in the
+            // theme, so a theme name would resolve to nothing.
+            QList<QVariant> args;
+            args << name
+                 << QStringLiteral("/usr/share/icons/hicolor/86x86/apps/harbour-tuuli.png")
+                 << QStringLiteral("icon-s-cloud-download")
+                 << file << mime << expected_size
+                 << QStringList()
+                 << QString() << QString();
+            QDBusReply<int> reply = iface.callWithArgumentList(QDBus::Block, QStringLiteral("createDownload"), args);
             return reply.isValid() ? reply.value() : -1;
         });
         if id >= 0 {
