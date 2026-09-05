@@ -137,7 +137,7 @@ cargo build \
 %endif
 
 # The catalogs: translations/harbour-tuuli.ts (engineering English from the
-# //% comments) and any harbour-tuuli-<lang>.ts, compiled here.
+# //%% comments) and any harbour-tuuli-<lang>.ts, compiled here.
 ./scripts/release-translations.sh
 
 %install
