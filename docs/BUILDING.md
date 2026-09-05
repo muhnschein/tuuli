@@ -106,7 +106,9 @@ it copies Servo's `rust-toolchain.toml` into `servo/app` so cargo uses
 that toolchain for the whole build, applies the patch queue if there is
 one, and checks that the binary is aarch64, has no host RUNPATH and needs
 only sysroot libraries.  Which of those libraries Harbour allows is the
-validator's call (`docs/HARBOUR.md`).
+validator's call (`docs/HARBOUR.md`).  `--media` (or `MEDIA=1`) adds
+Servo's GStreamer media backend, which needs `gstreamer-webrtc-1.0.pc` in
+the target; off, media elements do not play (`servo/README.md`).
 
 Spec constraints, each found the hard way in Postivene and carried here:
 `-j1` for cargo under sb2; no `--target` for cargo (`SB2_RUST_TARGET_TRIPLE`

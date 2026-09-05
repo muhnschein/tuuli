@@ -10,6 +10,9 @@
 fn main() {
     let list = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("main.dynlist");
     println!("cargo:rerun-if-changed={}", list.display());
-    println!("cargo:rustc-link-arg-bins=-Wl,--dynamic-list={}", list.display());
+    println!(
+        "cargo:rustc-link-arg-bins=-Wl,--dynamic-list={}",
+        list.display()
+    );
     println!("cargo:rustc-link-arg-bins=-Wl,--as-needed");
 }

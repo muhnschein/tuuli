@@ -46,6 +46,14 @@ on:
           that runs on older phones and that Harbour rejects.
         type: string
         default: "5.2.0.15"
+      media:
+        description: >
+          Servo engine only: build Servo's GStreamer media backend
+          (audio, video, WebRTC).  Links the target's GStreamer including
+          libgstwebrtc-1.0, which the sysroot has to provide and Harbour
+          has to allow (docs/HARBOUR.md); off, media elements do not play.
+        type: boolean
+        default: false
   push:
     # `v*` for a release.  `build-*` is a throwaway handle for running
     # this before it reaches the default branch, since workflow_dispatch
@@ -63,6 +71,7 @@ jobs:
       ENGINE: ${{ inputs.engine || 'mock' }}
       ARCH: ${{ inputs.arch || 'aarch64' }}
       SFOS: ${{ inputs.sfos_version || '5.2.0.15' }}
+      MEDIA: ${{ inputs.media && '1' || '0' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -187,17 +196,33 @@ jobs:
                        gstreamer1.0-devel gstreamer1.0-plugins-base-devel \
                        fontconfig-devel freetype-devel harfbuzz-devel \
                        dbus-devel openssl-devel zlib-devel glib2-devel \
-                       libxml2-devel libhybris-devel libhybris-libEGL-devel \
-                       libhybris-libGLESv2-devel wayland-devel libxkbcommon-devel; do
+                       libxml2-devel "pkgconfig(egl)" "pkgconfig(glesv2)" \
+                       wayland-devel libxkbcommon-devel \
+                       "pkgconfig(gstreamer-webrtc-1.0)"; do
                 sb2 -t "$TARGET" -m sdk-install -R zypper --non-interactive in -y --no-recommends "$p" \
                   || echo "::warning::$p is not installable in the target; the engine build may want it"
               done
               root=$(sb2-config -t 2>/dev/null || true)
               [ -d "$root" ] || root="/srv/mer/targets/$TARGET"
               echo "copying $root"
-              cp -a "$root/." /out/'
+              # A sysroot, not a root filesystem: the headers and libraries
+              # under usr/ (lib and lib64 are symlinks into it), nothing
+              # from dev/ (device nodes an unprivileged user cannot create)
+              # and nothing a build never reads.  tar rather than cp so an
+              # unreadable file (shadow, the device-lock keys) is skipped
+              # instead of failing the copy.
+              cd "$root"
+              tar -cf - --ignore-failed-read \
+                  --exclude=./dev --exclude=./proc --exclude=./sys --exclude=./run \
+                  --exclude=./home --exclude=./root --exclude=./var --exclude=./tmp \
+                  --exclude=./etc/shadow --exclude=./etc/shadow- \
+                  --exclude=./etc/gshadow --exclude=./etc/gshadow- \
+                  --exclude=./usr/share/lipstick/devicelock \
+                  . 2>/dev/null | (cd /out && tar -xf - --no-same-owner --no-same-permissions) || true'
           ls /tmp/sysroot/usr/include/qt5/QtCore/qglobal.h /tmp/sysroot/usr/include/sailfishapp/sailfishapp.h
-          df -h / | tail -1
+          ls /tmp/sysroot/usr/include/EGL/egl.h /tmp/sysroot/usr/include/GLES2/gl2.h || echo "::warning::no EGL/GLES headers in the sysroot"
+          ls -d /tmp/sysroot/usr/lib64 /tmp/sysroot/usr/lib 2>/dev/null
+          du -sh /tmp/sysroot; df -h / | tail -1
 
       # servo/build.sh reads Servo's pinned rust-toolchain.toml at the tag
       # and installs it through rustup; clang and lld come from apt.
@@ -207,7 +232,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends clang lld llvm python3 pkg-config cmake xz-utils curl
           sudo chown -R "$(id -u):$(id -g)" "$PWD"
-          servo/build.sh --sysroot /tmp/sysroot --jobs "$(nproc)"
+          servo/build.sh --sysroot /tmp/sysroot --jobs "$(nproc)" $([ "$MEDIA" = 1 ] && echo --media)
           cp servo/out/harbour-tuuli-servo-*-aarch64.tar.xz rpm/
           ls -la rpm/
           sudo chown -R "$SDK_UID:$SDK_GID" "$PWD"

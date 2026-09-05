@@ -12,12 +12,30 @@ publish = false
 
 [workspace]
 
+[features]
+default = []
+# Servo's GStreamer media backend (audio, video, WebRTC).  Off by default:
+# it links the system GStreamer, including libgstwebrtc-1.0, which the
+# Sailfish target and Harbour's library list both have to provide first
+# (docs/HARBOUR.md, docs/M0-CHECKLIST.md).  Without it Servo uses its
+# dummy media backend: pages load and paint, media elements do not play.
+media = ["servo/media-gstreamer"]
+
 [dependencies]
 tuuli-core = { path = "../../crates/tuuli-core" }
 log = "0.4"
 # Pinned to the tag in ../SERVO_TAG.  Rebased monthly (docs/UPSTREAM.md).
-servo = { git = "https://github.com/servo/servo.git", tag = "v0.5.0", package = "libservo", default-features = false, features = ["media-gstreamer"] }
+# The embedding crate is `servo` (components/servo).  Features: the
+# defaults minus `clipboard` (arboard; the ClipboardDelegate goes through
+# Qt instead).  bundled_freetype keeps FreeType out of the binary's
+# dynamic dependencies (docs/HARBOUR.md).  GStreamer media (spec 8.2) is
+# the `media` feature below.
+servo = { git = "https://github.com/servo/servo.git", tag = "v0.5.0", default-features = false, features = ["baked-in-resources", "bundled_freetype", "js_jit"] }
+url = "2"
+# The versions Servo's workspace pins at the tag (types cross the seam).
+dpi = "0.1"
+keyboard-types = "0.8"
 euclid = "0.22"
 gleam = "0.15"
-glow = "0.16"
-url = "2"
+glow = "0.17"
+surfman = { version = "0.13", features = ["chains"] }

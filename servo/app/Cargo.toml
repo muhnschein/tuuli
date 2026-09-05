@@ -20,6 +20,8 @@ path = "src/main.rs"
 [features]
 default = []
 sailfish = ["tuuli-browser/sailfish"]
+# GStreamer media through Servo; see servo/backend/Cargo.toml.
+media = ["tuuli-servo-backend/media"]
 
 [dependencies]
 tuuli-core = { path = "../../crates/tuuli-core" }

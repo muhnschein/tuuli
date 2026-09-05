@@ -6,12 +6,16 @@ whole approach.
 
 ## 1. Engine cross-build
 
-- [ ] `cargo check --manifest-path servo/backend/Cargo.toml` passes
-      against the pinned tag: the backend is reconciled with what
-      `libservo` 0.5.0 actually exports (delegate method names, builder
-      options, `RenderingContext`).  Every `WebView` method the tag has
-      no counterpart for is a logged no-op, recorded in
-      [UPSTREAM.md](UPSTREAM.md).
+- [x] `cargo check --manifest-path servo/backend/Cargo.toml` passes
+      against the pinned tag (2026-09-05, host, with and without the
+      `media` feature): the backend is reconciled with what the `servo`
+      crate at 0.5.0 actually exports (`ServoBuilder`, `WebViewBuilder`,
+      `WebViewDelegate` and its embedder controls, `RenderingContext`).
+      Every `WebView` method the tag has no counterpart for is a logged
+      no-op, recorded in [UPSTREAM.md](UPSTREAM.md).  One build-graph
+      fact came out of it: Servo's storage crate links rusqlite 0.38, so
+      tuuli-core's rusqlite is a range shared with it (root
+      `Cargo.toml`; the mock build stays on 0.31 through the lockfile).
 - [ ] The `rpm` workflow with engine `servo` completes: `servo/build.sh`
       builds against the SFOS 5.2 aarch64 target root lifted out of the
       SDK image, SpiderMonkey included, and qttypes/qmetaobject-rs build
@@ -19,7 +23,13 @@ whole approach.
       Expect to iterate on the sysroot's development packages (the
       workflow's "Lift the target root" step lists them).
 - [ ] `llvm-readelf` shows an aarch64 binary with no RUNPATH and only
-      sysroot libraries in `NEEDED`.
+      sysroot libraries in `NEEDED`.  The first build is without the
+      backend's `media` feature (Servo's dummy media backend), so the
+      list is fontconfig, EGL/GLESv2, GLib and friends; the GStreamer
+      libraries, `libgstwebrtc-1.0` included, join it once the workflow
+      runs with `media` on, which needs `gstreamer-webrtc-1.0.pc` in the
+      target (the sysroot step tries to install it and warns if the SDK
+      has no such package).
 - [ ] The workflow's validator step lists which of those libraries
       Harbour does not allow; record each in `ci/harbour/waivers.conf`
       and take the list to Jolla (`docs/HARBOUR.md`).

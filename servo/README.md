@@ -27,12 +27,22 @@ is touched by exactly two commands:
 
 ## Backend status
 
-`backend/src/lib.rs` is written against the 0.5.0 API surface
-(`ServoBuilder`, `WebViewBuilder`, `WebViewDelegate`, `ServoDelegate`,
-`RenderingContext`, `EventLoopWaker`) and reconciled against what the tag
-actually exports during M0 (`docs/M0-CHECKLIST.md`).  Every `WebView`
-trait method the tag has no counterpart for is a logged no-op and is
-listed in `docs/UPSTREAM.md`; nothing is worked around locally.
+`backend/src/lib.rs` is reconciled against what the `servo` crate at
+0.5.0 exports (`ServoBuilder`, `WebViewBuilder`, `WebViewDelegate` and
+its embedder controls, `ServoDelegate`, `RenderingContext`,
+`EventLoopWaker`): `cargo check` on it passes (`docs/M0-CHECKLIST.md`).
+Every `WebView` trait method the tag has no counterpart for is a logged
+no-op and is listed in `docs/UPSTREAM.md`, with what 0.5.0 does offer;
+nothing is worked around by reaching past the public API.
+
+## Media
+
+Servo's GStreamer media backend is the backend's `media` cargo feature
+(`servo/app` forwards it; `servo/build.sh --media`), off by default: it
+links the system GStreamer including `libgstwebrtc-1.0`, which the
+Sailfish target has to provide and Harbour has to allow first
+(docs/HARBOUR.md).  Without it Servo's dummy media backend is built in:
+pages load and paint, `<audio>`/`<video>` do not play.
 
 ## Running with the mock engine instead
 

@@ -7,7 +7,11 @@
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let engine = if args.iter().any(|a| a == "--mock-engine") || std::env::var_os("TUULI_ENGINE").map(|v| v == "mock").unwrap_or(false) {
+    let engine = if args.iter().any(|a| a == "--mock-engine")
+        || std::env::var_os("TUULI_ENGINE")
+            .map(|v| v == "mock")
+            .unwrap_or(false)
+    {
         tuuli_core::mock::MockEngine::new() as std::rc::Rc<dyn tuuli_core::engine::Engine>
     } else {
         tuuli_servo_backend::create_engine()

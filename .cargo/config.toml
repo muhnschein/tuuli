@@ -1,0 +1,7 @@
+# Cargo >= 1.84 only (older cargo, the SDK's 1.75 included, ignores this
+# table): when re-resolving, prefer dependency versions whose rust-version
+# fits the workspace's (1.75, the SDK's Rust), so `cargo update` keeps the
+# mock build on the SDK toolchain.  The Servo build (servo/app) sets no
+# rust-version and resolves against Servo's own toolchain.
+[resolver]
+incompatible-rust-versions = "fallback"

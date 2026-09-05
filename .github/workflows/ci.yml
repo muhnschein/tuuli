@@ -131,6 +131,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             clang llvm python3 pkg-config libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libgstreamer-plugins-bad1.0-dev \
             libfontconfig1-dev libfreetype-dev libharfbuzz-dev libegl1-mesa-dev libgles2-mesa-dev \
             libdbus-1-dev libssl-dev libudev-dev
-      - run: cargo check --manifest-path servo/backend/Cargo.toml
+      # With the media feature: the superset (servo/backend/Cargo.toml).
+      - run: cargo check --manifest-path servo/backend/Cargo.toml --features media

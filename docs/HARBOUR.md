@@ -187,13 +187,15 @@ Harbour allows a fixed list of shared libraries (`ci/harbour/allowed_libraries.c
 Servo, statically linked into the binary, still needs the system's
 GStreamer (`libgstreamer-1.0`, `libgstapp-1.0`, `libgstvideo-1.0` and
 friends — the media path, spec 8.2, decodes through gst-droid, which is
-only reachable through the system GStreamer), FreeType and HarfBuzz for
-text, and possibly more (the validator's first run is the definitive
-list).  Of those, only `libfontconfig`, `libEGL`/`libGLESv2`, `libdbus-1`,
-`libssl`/`libcrypto` and GLib are on the list.
+only reachable through the system GStreamer), and possibly more (the
+validator's first run is the definitive list).  Of the rest,
+`libfontconfig`, `libEGL`/`libGLESv2`, `libdbus-1` and GLib are on the
+list.
 
-What can be done here: build FreeType and HarfBuzz into the binary (both
-crates support it) and keep the dynamic list to GStreamer.  What cannot:
+What is done here: FreeType and HarfBuzz are built into the binary
+(`servo/backend/Cargo.toml` enables Servo's `bundled_freetype`; Servo
+bundles HarfBuzz on Linux at 0.5.0), which keeps the dynamic list to
+GStreamer.  What cannot be done:
 GStreamer's plugin loader has to be the system's copy, so bundling it under
 `/usr/share/harbour-tuuli/lib/` — the one place Harbour permits a private
 `.so` — would put two GStreamer cores in one process.  The ask is for the
