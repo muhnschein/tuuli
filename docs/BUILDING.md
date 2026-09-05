@@ -29,6 +29,12 @@ display it renders through the real FBO path:
     sudo apt install xvfb libgl1-mesa-dri libglx-mesa0 libegl-mesa0
     make smoke
 
+`tests/qml_loads.rs` instantiates every file of the chrome against the
+Silica stubs in `tests/silica-stubs` (a missing import, a mistyped type or
+property, a file not where a `Qt.resolvedUrl` says); it runs with the
+rest of `cargo test`.  `EnterKey` cannot be stubbed, so the test strips
+those lines from its copy of the QML.
+
 `make check` runs everything CI runs that needs no SDK: format, clippy,
 the tests, the Rust 1.75 build, the lockfile format, the QML syntax, the
 packaging lint, the Harbour source check with its selftest, and the

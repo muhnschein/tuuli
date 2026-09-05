@@ -18,7 +18,6 @@ SilicaFlickable {
     contentHeight: column.height + Theme.paddingLarge
 
     onVisibleChanged: if (visible && focusSearchOnShow) searchField.forceActiveFocus()
-    Component.onCompleted: if (visible && focusSearchOnShow) searchField.forceActiveFocus()
 
     Column {
         id: column
@@ -173,7 +172,10 @@ SilicaFlickable {
     }
 
     Component.onDestruction: Browser.history.filter = ""
-    Component.onCompleted: Browser.history.limit = 12
+    Component.onCompleted: {
+        Browser.history.limit = 12
+        if (visible && focusSearchOnShow) searchField.forceActiveFocus()
+    }
 
     VerticalScrollDecorator {}
 }

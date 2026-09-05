@@ -24,6 +24,7 @@ cpp! {{
     #include <QtCore/QUrl>
     #include <QtGui/QGuiApplication>
     #include <QtQml/QQmlEngine>
+    #include <QtQml/QQmlComponent>
     #include <QtQuick/QQuickView>
     #ifdef TUULI_SAILFISH
     #include <sailfishapp.h>
@@ -173,4 +174,26 @@ pub fn run(engine: Rc<dyn Engine>, args: Vec<String>) -> i32 {
     tuuli_qml::platform::add_image_provider(view_engine(view));
     show_view(view, main_qml_url());
     exec_application(app)
+}
+
+/// Test support: instantiate the QML document at `url` in `engine` (a
+/// `QQmlEngine *`) and report the component's errors, or `Ok` when the
+/// root object was created.  This is how `tests/qml_loads.rs` proves every
+/// file of the chrome loads against the Silica stubs in `tests/silica-stubs`,
+/// which a device would otherwise be the first to find out.
+pub fn probe_qml(engine: *mut c_void, url: &str) -> Result<(), String> {
+    let url = QString::from(url);
+    let error: QString = cpp!(unsafe [engine as "QQmlEngine *", url as "QString"] -> QString as "QString" {
+        QQmlComponent component(engine, QUrl(url));
+        if (component.isError()) return component.errorString();
+        QObject *object = component.create();
+        if (!object) return component.errorString();
+        delete object;
+        return QString();
+    });
+    if error.is_empty() {
+        Ok(())
+    } else {
+        Err(error.to_string())
+    }
 }

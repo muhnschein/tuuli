@@ -1,0 +1,50 @@
+module Sailfish.Silica
+ApplicationWindow 1.0 ApplicationWindow.qml
+BusyIndicator 1.0 BusyIndicator.qml
+BusyIndicatorSize 1.0 BusyIndicatorSize.qml
+BackgroundItem 1.0 BackgroundItem.qml
+Button 1.0 Button.qml
+Column 1.0 Column.qml
+ComboBox 1.0 ComboBox.qml
+DetailItem 1.0 DetailItem.qml
+Dialog 1.0 Dialog.qml
+DialogHeader 1.0 DialogHeader.qml
+ContextMenu 1.0 ContextMenu.qml
+CoverAction 1.0 CoverAction.qml
+CoverActionList 1.0 CoverActionList.qml
+CoverBackground 1.0 CoverBackground.qml
+IconButton 1.0 IconButton.qml
+Label 1.0 Label.qml
+ListItem 1.0 ListItem.qml
+MenuItem 1.0 MenuItem.qml
+Page 1.0 Page.qml
+PageHeader 1.0 PageHeader.qml
+PasswordField 1.0 PasswordField.qml
+ProgressBar 1.0 ProgressBar.qml
+PullDownMenu 1.0 PullDownMenu.qml
+RemorsePopup 1.0 RemorsePopup.qml
+SearchField 1.0 SearchField.qml
+SectionHeader 1.0 SectionHeader.qml
+SilicaFlickable 1.0 SilicaFlickable.qml
+SilicaListView 1.0 SilicaListView.qml
+Slider 1.0 Slider.qml
+TextField 1.0 TextField.qml
+TextSwitch 1.0 TextSwitch.qml
+ViewPlaceholder 1.0 ViewPlaceholder.qml
+singleton Theme 1.0 Theme.qml
+singleton Screen 1.0 Screen.qml
+singleton Clipboard 1.0 Clipboard.qml
+TruncationMode 1.0 TruncationMode.qml
+PageStatus 1.0 PageStatus.qml
+PageStackAction 1.0 PageStackAction.qml
+singleton StandardPaths 1.0 StandardPaths.qml
+Orientation 1.0 Orientation.qml
+Dock 1.0 Dock.qml
+singleton Format 1.0 Format.qml
+singleton Remorse 1.0 Remorse.qml
+VerticalScrollDecorator 1.0 VerticalScrollDecorator.qml
+PushUpMenu 1.0 PushUpMenu.qml
+MenuLabel 1.0 MenuLabel.qml
+DockedPanel 1.0 DockedPanel.qml
+SilicaGridView 1.0 SilicaGridView.qml
+FadeAnimation 1.0 FadeAnimation.qml

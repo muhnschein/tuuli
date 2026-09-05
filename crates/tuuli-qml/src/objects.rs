@@ -41,7 +41,7 @@ pub struct TabObject {
     url: qt_property!(QString; NOTIFY changed),
     title: qt_property!(QString; NOTIFY changed),
     displayTitle: qt_property!(QString; NOTIFY changed),
-    loading: qt_property!(bool; NOTIFY changed),
+    loading: qt_property!(bool; NOTIFY loadingChanged),
     canGoBack: qt_property!(bool; NOTIFY changed),
     canGoForward: qt_property!(bool; NOTIFY changed),
     isPrivate: qt_property!(bool; NOTIFY changed),
@@ -51,11 +51,16 @@ pub struct TabObject {
     thumbnailSource: qt_property!(QString; NOTIFY changed),
     desktopMode: qt_property!(bool; WRITE set_desktop_mode NOTIFY changed),
     hasWebView: qt_property!(bool; NOTIFY changed),
-    scrollX: qt_property!(f64; NOTIFY changed),
-    scrollY: qt_property!(f64; NOTIFY changed),
-    pinchZoom: qt_property!(f64; NOTIFY changed),
-    contentHeight: qt_property!(f64; NOTIFY changed),
+    scrollX: qt_property!(f64; NOTIFY viewportChanged),
+    scrollY: qt_property!(f64; NOTIFY viewportChanged),
+    pinchZoom: qt_property!(f64; NOTIFY viewportChanged),
+    contentHeight: qt_property!(f64; NOTIFY viewportChanged),
+    /// Anything above changed.
     changed: qt_signal!(),
+    /// `loading` flipped: the chrome shows the toolbar on a new load.
+    loadingChanged: qt_signal!(),
+    /// Scroll, zoom or content size moved: the chrome hides the toolbar.
+    viewportChanged: qt_signal!(),
 
     load: qt_method!(fn(&mut self, url: QString)),
     reload: qt_method!(fn(&mut self)),
@@ -69,15 +74,37 @@ pub struct TabObject {
 
     favicon_revision: u32,
     thumbnail_revision: u32,
+    /// Set by `sync_from`, consumed by `emit_changes`: which of the
+    /// finer-grained signals the last sync earned.
+    loading_dirty: bool,
+    viewport_dirty: bool,
 }
 
 impl TabObject {
+    /// `changed`, plus `loadingChanged` / `viewportChanged` when the last
+    /// `sync_from` moved those.  Needs no `&mut self`: the flags are read
+    /// here and reset on the next sync.
+    fn emit_changes(&self) {
+        self.changed();
+        if self.loading_dirty {
+            self.loadingChanged();
+        }
+        if self.viewport_dirty {
+            self.viewportChanged();
+        }
+    }
+
     fn id(&self) -> TabId {
         self.tabId as TabId
     }
 
     /// Mirrors core state; publishes changed images to `image://tuuli/`.
     fn sync_from(&mut self, t: &Tab) {
+        self.loading_dirty = self.loading != t.loading;
+        self.viewport_dirty = self.scrollX != t.scroll.x
+            || self.scrollY != t.scroll.y
+            || self.pinchZoom != t.pinch_zoom
+            || self.contentHeight != t.content_size.height;
         self.tabId = t.id as i32;
         self.url = qs(&t.url);
         self.title = qs(&t.title);
@@ -367,7 +394,7 @@ impl TabModel {
                         self.tabs[row].pinned().borrow_mut().sync_from(t);
                     }
                 });
-                self.tabs[row].pinned().borrow().changed();
+                self.tabs[row].pinned().borrow().emit_changes();
                 let idx = self.row_index(row as i32);
                 self.data_changed(idx, idx);
             }
@@ -810,12 +837,23 @@ impl PermissionsObject {
 macro_rules! pref_setter {
     ($fn_name:ident, $field:ident, $ty:ty, $conv:expr) => {
         fn $fn_name(&mut self, v: $ty) {
-            with_core(|b| {
-                b.prefs.$field = $conv(v);
-                b.apply_prefs();
+            let value = $conv(v);
+            // Only on an actual change: the chrome binds `checked: pref`
+            // and writes `pref = checked` back, and notifying on a no-op
+            // write would re-enter that binding.
+            let changed = with_core(|b| {
+                if b.prefs.$field == value {
+                    false
+                } else {
+                    b.prefs.$field = value;
+                    b.apply_prefs();
+                    true
+                }
             });
-            self.sync();
-            pump();
+            if changed {
+                self.sync();
+                pump();
+            }
         }
     };
 }

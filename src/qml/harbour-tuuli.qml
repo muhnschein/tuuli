@@ -7,6 +7,7 @@ import Sailfish.Silica 1.0
 import Sailfish.Share 1.0
 import Tuuli 1.0
 import "components"
+import "pages"
 
 ApplicationWindow {
     id: app
