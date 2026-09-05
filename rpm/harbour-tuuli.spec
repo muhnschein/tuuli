@@ -112,6 +112,8 @@ export SB2_RUST_TARGET_TRIPLE=%{rusttarget}
 # paths as seen from inside sb2.
 export QT_INCLUDE_PATH=%{_includedir}/qt5
 export QT_LIBRARY_PATH=%{_libdir}
+# The target's Qt is a GLES build: the FBO renderer links libGLESv2.
+export TUULI_LINK_GLESV2=1
 
 # Build scripts and proc-macros are compiled for the tooling's own
 # architecture, and rustc links them by calling plain `cc`, which sb2

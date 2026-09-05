@@ -62,6 +62,24 @@ fn main() {
     config.build("src/lib.rs");
     println!("cargo:rustc-link-search={qt_library_path}");
     println!("cargo:rustc-link-lib=Qt5DBus");
+
+    // On a GLES build of Qt (the Sailfish target), QOpenGLFunctions calls
+    // the GLES 2 entry points directly instead of through resolved
+    // pointers, so the renderer's glClear/glBindFramebuffer need
+    // libGLESv2 at link time; a desktop-GL Qt (the host) needs nothing.
+    // Read off Qt's own configuration: qconfig.h (Qt < 5.8) defines
+    // QT_OPENGL_ES_2, qtgui-config.h (Qt >= 5.8) sets the feature.
+    // TUULI_LINK_GLESV2=1 forces it (the spec and servo/build.sh set it).
+    let gles = std::env::var("TUULI_LINK_GLESV2").map(|v| v == "1").unwrap_or(false)
+        || ["QtCore/qconfig.h", "QtGui/qtgui-config.h"].iter().any(|h| {
+            std::fs::read_to_string(format!("{qt_include_path}/{h}"))
+                .map(|s| s.contains("#define QT_OPENGL_ES_2") || s.contains("QT_FEATURE_opengles2 1"))
+                .unwrap_or(false)
+        });
+    if gles {
+        println!("cargo:rustc-link-lib=GLESv2");
+    }
+    println!("cargo:rerun-if-env-changed=TUULI_LINK_GLESV2");
     println!("cargo:rerun-if-changed=../../third_party/qmetaobject/qmetaobject_rust.hpp");
     // cpp_build extracts the C++ from the sources: any edit must re-run it.
     println!("cargo:rerun-if-changed=src");

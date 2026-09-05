@@ -142,6 +142,8 @@ export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=--target=$C
 export QT_INCLUDE_PATH="$SYSROOT/usr/include/qt5"
 export QT_LIBRARY_PATH="$LIBDIR"
 export SAILFISHAPP_INCLUDE_PATH="$SYSROOT/usr/include/sailfishapp"
+# The target's Qt is a GLES build: the FBO renderer links libGLESv2.
+export TUULI_LINK_GLESV2=1
 # C/C++ deps (gstreamer, fontconfig, freetype, harfbuzz, egl, dbus, ...)
 # via the target's pkg-config files.
 export PKG_CONFIG_ALLOW_CROSS=1
