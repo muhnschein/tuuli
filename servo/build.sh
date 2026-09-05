@@ -101,7 +101,7 @@ log "sysroot: $SYSROOT (libdir $LIBDIR)"
 # crtbegin.o, crtend.o and libgcc come from the target's GCC, installed
 # under a triple (aarch64-meego-linux-gnu) clang does not scan for; it is
 # pointed there explicitly.
-GCC_INSTALL="$(ls -d "$SYSROOT"/usr/lib/gcc/aarch64-*-linux-gnu/[0-9]* 2>/dev/null | sort -V | tail -1)"
+GCC_INSTALL="$(find "$SYSROOT/usr/lib/gcc" -mindepth 2 -maxdepth 2 -type d -path '*/aarch64-*-linux-gnu/[0-9]*' 2>/dev/null | sort -V | tail -1)"
 [ -n "$GCC_INSTALL" ] || die "no GCC installation under $SYSROOT/usr/lib/gcc (install gcc in the target)"
 [ -f "$GCC_INSTALL/crtbegin.o" ] || die "$GCC_INSTALL has no crtbegin.o"
 log "target gcc: $GCC_INSTALL"
