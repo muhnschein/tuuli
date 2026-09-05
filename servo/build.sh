@@ -101,10 +101,23 @@ log "sysroot: $SYSROOT (libdir $LIBDIR)"
 # crtbegin.o, crtend.o and libgcc come from the target's GCC, installed
 # under a triple (aarch64-meego-linux-gnu) clang does not scan for; it is
 # pointed there explicitly.
-GCC_INSTALL="$(find "$SYSROOT/usr/lib/gcc" -mindepth 2 -maxdepth 2 -type d -path '*/aarch64-*-linux-gnu/[0-9]*' 2>/dev/null | sort -V | tail -1)"
-[ -n "$GCC_INSTALL" ] || die "no GCC installation under $SYSROOT/usr/lib/gcc (install gcc in the target)"
+GCC_INSTALL=""
+if [ -d "$SYSROOT/usr/lib/gcc" ]; then
+    GCC_INSTALL="$(find "$SYSROOT/usr/lib/gcc" -mindepth 2 -maxdepth 2 -type d -path '*/aarch64-*-linux-gnu/*' | sort -V | tail -1 || true)"
+fi
+[ -n "$GCC_INSTALL" ] || die "no GCC installation under $SYSROOT/usr/lib/gcc: the target has none of its own, lift the tooling's cross gcc lib dir there (see the rpm workflow's sysroot step)"
 [ -f "$GCC_INSTALL/crtbegin.o" ] || die "$GCC_INSTALL has no crtbegin.o"
 log "target gcc: $GCC_INSTALL"
+# libstdc++ headers (libstdc++-devel in the target), named explicitly:
+# clang derives the directory from the GCC version and the target's
+# layout need not match.
+CXX_INCLUDE=""
+if [ -d "$SYSROOT/usr/include/c++" ]; then
+    CXX_INCLUDE="$(find "$SYSROOT/usr/include/c++" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1 || true)"
+fi
+[ -n "$CXX_INCLUDE" ] || die "no libstdc++ headers under $SYSROOT/usr/include/c++ (install libstdc++-devel in the target)"
+CXX_TARGET_INCLUDE="$(find "$CXX_INCLUDE" -mindepth 1 -maxdepth 1 -type d -name 'aarch64-*' | head -1 || true)"
+log "libstdc++ headers: $CXX_INCLUDE${CXX_TARGET_INCLUDE:+ + $CXX_TARGET_INCLUDE}"
 
 mkdir -p "$OUT" "$HERE/src" "$APP/.cargo"
 
@@ -148,12 +161,14 @@ fi
 # the final link.  -fuse-ld=lld is in the compile flags too: autoconf's
 # "C compiler works" test links, and the host's GNU ld has no aarch64
 # emulation.
-CROSS_FLAGS="--target=$CLANG_TARGET --sysroot=$SYSROOT --gcc-install-dir=$GCC_INSTALL -fuse-ld=lld"
+CROSS_TARGET_FLAGS="--target=$CLANG_TARGET --sysroot=$SYSROOT --gcc-install-dir=$GCC_INSTALL"
+CROSS_FLAGS="$CROSS_TARGET_FLAGS -fuse-ld=lld"
+CROSS_CXX_INCLUDES="-isystem $CXX_INCLUDE${CXX_TARGET_INCLUDE:+ -isystem $CXX_TARGET_INCLUDE}"
 export CC_aarch64_unknown_linux_gnu=clang
 export CXX_aarch64_unknown_linux_gnu=clang++
 export AR_aarch64_unknown_linux_gnu=llvm-ar
 export CFLAGS_aarch64_unknown_linux_gnu="$CROSS_FLAGS"
-export CXXFLAGS_aarch64_unknown_linux_gnu="$CROSS_FLAGS"
+export CXXFLAGS_aarch64_unknown_linux_gnu="$CROSS_FLAGS $CROSS_CXX_INCLUDES"
 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=clang
 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=--target=$CLANG_TARGET -C link-arg=--sysroot=$SYSROOT -C link-arg=--gcc-install-dir=$GCC_INSTALL -C link-arg=-fuse-ld=lld -C link-arg=-Wl,--as-needed -C link-arg=-L$LIBDIR"
 # Qt from the sysroot: qttypes takes these instead of running qmake, which
@@ -169,7 +184,7 @@ export PKG_CONFIG_ALLOW_CROSS=1
 export PKG_CONFIG_SYSROOT_DIR="$SYSROOT"
 export PKG_CONFIG_LIBDIR="$LIBDIR/pkgconfig:$SYSROOT/usr/share/pkgconfig"
 # bindgen (mozjs, gstreamer-sys) must see the sysroot headers, not the host's.
-export BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_gnu="--target=$CLANG_TARGET --sysroot=$SYSROOT"
+export BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_gnu="$CROSS_TARGET_FLAGS $CROSS_CXX_INCLUDES"
 # SpiderMonkey: build from source with clang against the sysroot.
 export MOZJS_FROM_SOURCE=1
 export MOZJS_CREATE_ARCHIVE=0
@@ -183,7 +198,7 @@ set(CMAKE_CXX_COMPILER clang++)
 set(CMAKE_C_COMPILER_TARGET $CLANG_TARGET)
 set(CMAKE_CXX_COMPILER_TARGET $CLANG_TARGET)
 set(CMAKE_C_FLAGS_INIT "$CROSS_FLAGS")
-set(CMAKE_CXX_FLAGS_INIT "$CROSS_FLAGS")
+set(CMAKE_CXX_FLAGS_INIT "$CROSS_FLAGS $CROSS_CXX_INCLUDES")
 set(CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=lld")
 set(CMAKE_SHARED_LINKER_FLAGS_INIT "-fuse-ld=lld")
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)

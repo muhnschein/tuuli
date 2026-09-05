@@ -191,7 +191,7 @@ jobs:
           docker run --rm --privileged -e TARGET -v /tmp/sysroot:/out "$IMAGE" \
             /bin/bash -c '
               set -e
-              for p in gcc glibc-devel libsailfishapp-devel qt5-qtcore-devel qt5-qtgui-devel \
+              for p in glibc-devel libstdc++-devel libsailfishapp-devel qt5-qtcore-devel qt5-qtgui-devel \
                        qt5-qtdeclarative-devel qt5-qtdbus-devel \
                        gstreamer1.0-devel gstreamer1.0-plugins-base-devel \
                        fontconfig-devel freetype-devel harfbuzz-devel \
@@ -204,6 +204,22 @@ jobs:
               done
               root=$(sb2-config -t 2>/dev/null || true)
               [ -d "$root" ] || root="/srv/mer/targets/$TARGET"
+              # crtbegin.o, crtend.o and libgcc.a: the target carries no
+              # gcc of its own (it is cross-compiled from the tooling), so
+              # the cross compiler'"'"'s private lib dir is lifted into the
+              # sysroot at the path clang is pointed at (servo/build.sh,
+              # --gcc-install-dir).
+              crt=$(find /srv/mer/toolings -type f -name crtbegin.o -path "*aarch64*" 2>/dev/null | head -1)
+              if [ -n "$crt" ]; then
+                gccdir=$(dirname "$crt"); ver=$(basename "$gccdir")
+                echo "tooling gcc dir: $gccdir"
+                mkdir -p "/out/usr/lib/gcc/aarch64-meego-linux-gnu/$ver"
+                cp -a "$gccdir/." "/out/usr/lib/gcc/aarch64-meego-linux-gnu/$ver/"
+                ls "/out/usr/lib/gcc/aarch64-meego-linux-gnu/$ver/"
+              else
+                echo "::warning::no aarch64 crtbegin.o under /srv/mer/toolings"
+                find /srv/mer -maxdepth 4 -type d 2>/dev/null | head -40
+              fi
               echo "copying $root"
               # A sysroot, not a root filesystem: the headers and libraries
               # under usr/ (lib and lib64 are symlinks into it), nothing
@@ -224,6 +240,12 @@ jobs:
           ls -d /tmp/sysroot/usr/lib64 /tmp/sysroot/usr/lib 2>/dev/null
           ls -d /tmp/sysroot/usr/lib/gcc/*/* 2>/dev/null || echo "::warning::no GCC installation in the sysroot (crtbegin.o, libgcc)"
           ls /tmp/sysroot/usr/lib64/crt1.o /tmp/sysroot/usr/lib64/libc.so 2>/dev/null || echo "::warning::no crt1.o/libc.so in the sysroot's lib64"
+          ls -d /tmp/sysroot/usr/include/c++/* 2>/dev/null || echo "::warning::no libstdc++ headers in the sysroot"
+          # -lgcc_s at link time needs the dev symlink the target lacks.
+          if [ -e /tmp/sysroot/usr/lib64/libgcc_s.so.1 ] && [ ! -e /tmp/sysroot/usr/lib64/libgcc_s.so ]; then
+            ln -s libgcc_s.so.1 /tmp/sysroot/usr/lib64/libgcc_s.so
+          fi
+          ls -l /tmp/sysroot/usr/lib64/libgcc_s.so* /tmp/sysroot/usr/lib64/libstdc++.so* 2>/dev/null || echo "::warning::no libgcc_s/libstdc++ in the sysroot's lib64"
           # Extracted by the container's root: a few root-only directories
           # (boot, etc/lvm, etc/pki/tls/private) come out unreadable by
           # the runner user.  The copy is ours, so take it over outright.
