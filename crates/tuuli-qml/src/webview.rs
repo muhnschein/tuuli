@@ -415,7 +415,6 @@ pub struct WebViewItem {
     gesture: GestureConfig,
     ctx: Option<Rc<QtRenderingContext>>,
     init_failed: bool,
-    logged_screen: bool,
     size: Size,
     screen_dpr: f64,
     screen_dpi: f64,
@@ -470,7 +469,6 @@ impl Default for WebViewItem {
             gesture,
             ctx: None,
             init_failed: false,
-            logged_screen: false,
             size: Size::default(),
             screen_dpr: 1.0,
             screen_dpi: 0.0,
@@ -918,14 +916,6 @@ impl WebViewItemImpl for WebViewItem {
         self.gesture.screen = Size::new(width as f64, height as f64);
         self.arbiter.set_config(self.gesture.clone());
         self.resolve_dpr();
-        // Spec 15 / M0: the panel facts the budgets depend on, once per run.
-        if !self.logged_screen {
-            self.logged_screen = true;
-            eprintln!(
-                "tuuli: window {width}x{height}, Qt dpr {dpr}, physical dpi {dpi:.0}, refresh {:.0} Hz, content dpr {}",
-                self.refresh_hz, self.contentDevicePixelRatio
-            );
-        }
     }
 
     fn render(
@@ -973,6 +963,12 @@ impl WebViewItemImpl for WebViewItem {
         })
         .is_some();
         if self.frameCount == 1 {
+            // Spec 15 / M0: the panel facts the budgets depend on, once per
+            // run, from the first frame (the window has its size by then).
+            eprintln!(
+                "tuuli: first frame {width}x{height} px, window {}x{}, Qt dpr {}, physical dpi {:.0}, refresh {:.0} Hz, content dpr {}",
+                self.gesture.screen.width, self.gesture.screen.height, self.screen_dpr, self.screen_dpi, self.refresh_hz, self.contentDevicePixelRatio
+            );
             if on_gui_thread {
                 eprintln!("tuuli: first frame rendered on the GUI thread (basic render loop)");
             } else {
