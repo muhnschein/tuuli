@@ -39,6 +39,6 @@ Users who need a hardened browser should use Sailfish Browser.
 ## Removing the caveat
 
 Requires out-of-process content plus a functioning seccomp policy.  That is
-an M4-or-later question and depends on upstream.  The `Tuuli::Engine` seam
-exists so that the day it is possible, the change stays below the models
-and the QML.
+an M4-or-later question and depends on upstream.  The
+`tuuli_core::engine::Engine` seam exists so that the day it is possible,
+the change stays below the models and the QML.

@@ -172,7 +172,7 @@ SilicaFlickable {
         }
     }
 
-    Component.onDestruction: Browser.history.setFilter("")
+    Component.onDestruction: Browser.history.filter = ""
     Component.onCompleted: Browser.history.limit = 12
 
     VerticalScrollDecorator {}

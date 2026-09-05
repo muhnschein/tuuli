@@ -210,14 +210,6 @@ Page {
                 onCheckedChanged: Browser.prefs.showFrameStats = checked
             }
             TextSwitch {
-                //% "Single-threaded render loop (restart required)"
-                text: qsTrId("tuuli-la-basic_render_loop")
-                //% "Fallback if the engine misbehaves on the threaded scene graph"
-                description: qsTrId("tuuli-la-basic_render_loop_desc")
-                checked: Browser.prefs.basicRenderLoop
-                onCheckedChanged: Browser.prefs.basicRenderLoop = checked
-            }
-            TextSwitch {
                 //% "Engine logging (restart required)"
                 text: qsTrId("tuuli-la-engine_logging")
                 checked: Browser.prefs.engineLogging

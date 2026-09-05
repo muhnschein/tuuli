@@ -6,32 +6,34 @@ whole approach.
 
 ## 1. Engine cross-build
 
-- [ ] `servo/build-libservo.sh` completes against the SFOS 5.2 aarch64
-      target root, SpiderMonkey included.
-- [ ] `llvm-nm` shows the `servo_*` symbols; no host RUNPATH leaks.
-- [ ] `tools/check-capi-header.sh` passes: the cbindgen header from the
-      tag matches `servo/capi/servo_capi.h`.  If not, reconcile the header,
-      the stub and `ServoEngine`/`ServoWebView` in one commit.
-- [ ] `libservo` RPM installs on the device and `ldd` resolves against
-      system libraries only (gstreamer, fontconfig, freetype, harfbuzz,
-      EGL/GLESv2 via hybris).
-
-Where the C ABI surface used by the shim is not in the tag, it is added
-upstream in `servo_capi` (see [UPSTREAM.md](UPSTREAM.md)); the header in
-this tree is the target, not a fiction to be worked around.
+- [ ] `cargo check --manifest-path servo/backend/Cargo.toml` passes
+      against the pinned tag: the backend is reconciled with what
+      `libservo` 0.5.0 actually exports (delegate method names, builder
+      options, `RenderingContext`).  Every `WebView` method the tag has
+      no counterpart for is a logged no-op, recorded in
+      [UPSTREAM.md](UPSTREAM.md).
+- [ ] `servo/build.sh` completes against the SFOS 5.2 aarch64 target
+      root, SpiderMonkey included, and qttypes/qmetaobject-rs build
+      against the target's Qt 5.6 headers through `QT_INCLUDE_PATH`.
+- [ ] `llvm-readelf` shows an aarch64 binary with no RUNPATH and only
+      sysroot libraries in `NEEDED`.
+- [ ] The `tuuli-browser-servo` RPM installs on the device and `ldd`
+      resolves against system libraries only (gstreamer, fontconfig,
+      freetype, harfbuzz, EGL/GLESv2 via hybris).
 
 ## 2. WebRender on Mali-G610 through libhybris
 
-- [ ] `servo_init` on the Qt render thread succeeds (shader compile).
+- [ ] Engine initialisation inside the first `render()` succeeds
+      (shader compile) with `QSG_RENDER_LOOP=basic`.
 - [ ] A page paints into the `QQuickFramebufferObject` FBO and appears the
       right way up (check `mirrorVertically`).
 - [ ] Probe `EGL_KHR_fence_sync` and dmabuf import; record what is missing.
-- [ ] Try the threaded scene-graph loop first; if the render-thread paint /
-      GUI-thread event loop split misbehaves, switch to
-      `QSG_RENDER_LOOP=basic` (Settings → Developer) and record the
-      outcome.  Both must be tried; the choice goes into ARCHITECTURE.md.
+- [ ] Measure what the basic render loop costs the chrome's own
+      animations (page transitions, pulley) against §11; there is no
+      threaded fallback for the engine path, so the number goes into
+      ARCHITECTURE.md as a fact, not a choice.
 - [ ] Cover/minimise/sleep the app: confirm the persistent context survives
-      or that the tear-down/re-init path (`renderContextLost`) restores the
+      or that the tear-down/re-init path (`RenderContextLost`) restores the
       tab.
 
 ## 3. Plausible frame rate in a bare window
@@ -49,6 +51,6 @@ this tree is the target, not a fiction to be worked around.
 - [ ] Panel refresh rate (`QScreen::refreshRate`).  Update
       `tools/budgets.json` `panel_hz`.
 - [ ] `QScreen::devicePixelRatio` and `physicalDotsPerInch`; the value
-      `Css::deriveDevicePixelRatio` picks.
+      `derive_device_pixel_ratio` picks.
 - [ ] Is the adaptation libhybris throughout?  Any mainline component?
 - [ ] gst-droid decoder output format WebRender can sample without a copy.

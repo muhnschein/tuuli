@@ -1,0 +1,20 @@
+[package]
+name = "tuuli-qml"
+description = "Tuuli Qt/QML layer: qmetaobject objects, FBO web view item, type registration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+links = "tuuli_qml_cpp"
+
+[dependencies]
+tuuli-core.workspace = true
+qmetaobject.workspace = true
+qttypes.workspace = true
+cpp.workspace = true
+cstr.workspace = true
+log.workspace = true
+
+[build-dependencies]
+cpp_build.workspace = true

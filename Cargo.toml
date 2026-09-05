@@ -1,0 +1,41 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/tuuli-core",
+    "crates/tuuli-qml",
+    "crates/tuuli-browser",
+]
+# The libservo backend and the Servo-linked binary depend on the pinned
+# Servo git tag.  They are separate packages so that host builds and CI
+# never resolve (clone) Servo; see servo/README.md.
+exclude = ["servo/backend", "servo/app"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+repository = "https://github.com/muhnschein/tuuli"
+rust-version = "1.80"
+
+[workspace.dependencies]
+tuuli-core = { path = "crates/tuuli-core" }
+tuuli-qml = { path = "crates/tuuli-qml" }
+tuuli-browser = { path = "crates/tuuli-browser" }
+qmetaobject = "0.2"
+qttypes = "0.2"
+cpp = "0.5"
+cpp_build = "0.5"
+cstr = "0.2"
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "2"
+regex = "1"
+percent-encoding = "2"
+log = "0.4"
+env_logger = "0.11"
+
+[profile.release]
+debug = 1
+lto = "thin"
+codegen-units = 4

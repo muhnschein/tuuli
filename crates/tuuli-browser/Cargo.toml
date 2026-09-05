@@ -1,0 +1,40 @@
+[package]
+name = "tuuli-browser"
+description = "Tuuli, a Servo-based browser for Sailfish OS (application shell)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+links = "tuuli_browser_cpp"
+
+[lib]
+name = "tuuli_browser"
+path = "src/lib.rs"
+
+# The mock-engine binary: host builds, emulator, UI iteration on device.
+# The Servo-linked binary of the same name is servo/app.
+[[bin]]
+name = "tuuli-browser"
+path = "src/main.rs"
+
+[features]
+default = []
+# Link libsailfishapp and use SailfishApp::application/createView.
+sailfish = []
+
+[dependencies]
+tuuli-core.workspace = true
+tuuli-qml.workspace = true
+qmetaobject.workspace = true
+qttypes.workspace = true
+cpp.workspace = true
+cstr.workspace = true
+log.workspace = true
+env_logger.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+
+[build-dependencies]
+cpp_build.workspace = true

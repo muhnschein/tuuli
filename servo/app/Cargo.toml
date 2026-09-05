@@ -1,0 +1,30 @@
+# The Servo-linked tuuli-browser binary.  Deliberately outside the root
+# workspace so host builds never resolve Servo; see servo/README.md.
+
+[package]
+name = "tuuli-browser-servo"
+description = "Tuuli with the libservo engine"
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "tuuli-browser"
+path = "src/main.rs"
+
+[features]
+default = []
+sailfish = ["tuuli-browser/sailfish"]
+
+[dependencies]
+tuuli-core = { path = "../../crates/tuuli-core" }
+tuuli-browser = { path = "../../crates/tuuli-browser" }
+tuuli-servo-backend = { path = "../backend" }
+
+[profile.release]
+debug = 1
+lto = "thin"
+codegen-units = 4

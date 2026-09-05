@@ -6,7 +6,7 @@
 (spec 11, 13).
 
 The app writes JSON lines to <cache>/perf.log when Settings → Developer →
-"Performance logging" is on (see src/lib/perf/perflog.cpp).  Copy that
+"Performance logging" is on (see crates/tuuli-core/src/perflog.rs).  Copy that
 file off the device and run:
 
     tools/perf/run-budgets.py perf.log [--budgets tools/budgets.json]

@@ -4,41 +4,50 @@ Spec 3.3 and 12.4 in practice.
 
 ## Cadence
 
-- Pin to a Servo release tag (`servo/SERVO_TAG`).  Never track `main`.
+- Pin to a Servo release tag (`servo/SERVO_TAG`, and the matching `tag =`
+  in `servo/backend/Cargo.toml`).  Never track `main`.
 - Rebase monthly, aligned with Servo's release rhythm.  Budget one to three
-  days.  A rebase is: bump the tag, rebuild with `servo/build-libservo.sh`,
-  reconcile `servo/capi/servo_capi.h` if the header check fails, update
-  `src/lib/prefs/servoprefs.h` against the tag's pref names, run the host
-  tests, run the device matrix.
-- Keep the shim thin so churn lands in `src/lib/engine/servo*.cpp` only.
+  days.  A rebase is: bump both pins; `cargo check --manifest-path
+  servo/backend/Cargo.toml` and reconcile `servo/backend/src/lib.rs`
+  against the tag's `WebViewDelegate`, `ServoDelegate` and
+  `RenderingContext`; update the pref name table in
+  `crates/tuuli-core/src/prefs.rs`; run the host tests; run
+  `servo/build.sh`; run the device matrix.
+- Keep the backend thin so churn lands in `servo/backend` only.  Nothing
+  above `tuuli_core::engine` names a Servo type.
 
 ## Patch queue
 
-`servo/patches/` with a `series` file, applied by the build script.  Every
-patch names its upstream issue or PR.  Anything carried for more than two
-rebases is proposed upstream or dropped.
+`servo/patches/` with a `series` file.  When the queue is non-empty,
+`servo/build.sh` clones the tag, applies the patches and points cargo at
+the patched checkout through a `[patch]` section in
+`servo/app/.cargo/config.toml`; with an empty queue cargo builds the tag
+straight from git.  Every patch names its upstream issue or PR.  Anything
+carried for more than two rebases is proposed upstream or dropped.
 
 ## Items to land upstream
 
-These are things the shim assumes of `servo_capi`.  Until each lands, the
-corresponding shim call is a no-op or the feature is off; none of them is
-worked around with Rust glue.
+These are things the backend needs from libservo's API.  Until each
+exists in the pinned tag, the corresponding `WebView` trait method in the
+backend is a logged no-op or the feature is off; none of them is worked
+around locally.  Which rows are already covered by 0.5.0 is settled by
+the M0 reconciliation of `servo/backend`.
 
 | Item | Spec | Used by |
 |---|---|---|
-| `SERVO_UA_PLATFORM_MOBILE_LINUX` (or a runtime device-type query) so `is_mobile()` engages on mobile Linux | 5.4 | `ServoEngine::initializeOnRenderThread` |
-| `servo_webview_request_context_menu` hit test for an embedder-detected long-press | 6.2 | `TuuliWebView::onLongPressed` |
-| `viewport_changed` with scroll offset, pinch zoom and content size | 8.4, 7.2 pulley handoff | `Tab`, `GestureArbiter` |
-| `servo_webview_set_viewport_rect` (visible rect without resizing the surface) | 6.3 | `TuuliWebView::pushViewport` |
-| IME callbacks with input type, current text, selection | 6.3 | `InputMethodProxy` |
-| Per-webview UA override | 7.2 desktop mode | `Tab::applyDesktopMode` |
-| Download callbacks with embedder-chosen destination | 7.1 | `DownloadManager` |
-| Callbacks installable on auxiliary (window.open) webviews at creation | 4 | `ServoWebView(AuxiliaryTag)` |
-| `servo_set_proxy` / proxy in instance config | 8.1 | `ConnmanProxy` |
-| Clipboard get/set callbacks | 8.3 | `ServoEngine::Callbacks` |
-| `servo_clear_site_data` by origin and kind (SiteDataManager) | 7.3 | `BrowserContext::clearBrowsingData` |
-| Media session events | 8.2 (M3, MPRIS) | `Tab::mediaSession` |
-| Request-interception API (stretch; the only route to network-level blocking) | 9.3 | not used yet |
+| A mobile-Linux `UserAgentPlatform` (or a runtime device-type query) so `is_mobile()` engages | 5.4 | `create_engine` |
+| Context-menu hit test for an embedder-detected long-press | 6.2 | `WebViewItem` long press → `WebView::request_context_menu` |
+| Viewport delegate call with scroll offset, pinch zoom and content size | 8.4, 7.2 pulley handoff | `Tab`, `GestureArbiter::set_content_edges` |
+| Visible-rect update without resizing the surface | 6.3 | `WebView::set_viewport_rect` |
+| IME delegate with input type, current text and selection | 6.3 | `InputMethodState` |
+| Per-webview UA override | 7.2 desktop mode | `WebView::set_user_agent_override` |
+| Download delegate with an embedder-chosen destination | 7.1 | `DownloadManager` |
+| Delegate installable on auxiliary (window.open) webviews at creation | 4 | `EngineEvent::AuxiliaryWebView` |
+| Proxy configuration on the builder or as a runtime call | 8.1 | `Engine::set_proxy`, `ProxyConfig::from_connman` |
+| Clipboard delegate | 8.3 | `ClipboardObject` |
+| Site-data clearing by origin and kind | 7.3 | `Engine::clear_site_data` |
+| Media-session events | 8.2 (M3, MPRIS) | `Tab::media_session` |
+| Request interception (stretch; the only route to network-level blocking) | 9.3 | not used yet |
 
 ## Compat bugs
 

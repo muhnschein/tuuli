@@ -1,0 +1,23 @@
+# The libservo backend.  Deliberately NOT a member of the root workspace:
+# resolving this manifest clones the pinned Servo tag, which host builds
+# and CI must never do.  Built only by servo/app (the Servo-linked binary).
+
+[package]
+name = "tuuli-servo-backend"
+description = "Tuuli engine backend over libservo"
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+publish = false
+
+[workspace]
+
+[dependencies]
+tuuli-core = { path = "../../crates/tuuli-core" }
+log = "0.4"
+# Pinned to the tag in ../SERVO_TAG.  Rebased monthly (docs/UPSTREAM.md).
+servo = { git = "https://github.com/servo/servo.git", tag = "v0.5.0", package = "libservo", default-features = false, features = ["media-gstreamer"] }
+euclid = "0.22"
+gleam = "0.15"
+glow = "0.16"
+url = "2"

@@ -6,7 +6,7 @@
 **Date:** September 2026
 **Target:** Sailfish OS 5.2+, aarch64, Jolla Phone (2026) and newer
 **Engine:** Servo (libservo), pinned release, MPL-2.0
-**App licence:** proposed MPL-2.0 (matches engine; avoids relicensing friction on shim code)
+**App licence:** proposed MPL-2.0 (matches engine; avoids relicensing friction on backend code)
 
 ---
 
@@ -92,9 +92,12 @@ budgets in §11.**
 ### 3.3 Engine
 
 - Pin to a tagged Servo release (0.5.0, released August 2026, or later). Do not track `main`.
-- Consume via **`servo_capi`**, the C ABI crate added upstream in May 2026, built as a shared object.
-  Where `servo_capi` does not yet expose something we need, extend it upstream rather than reaching
-  into `libservo` from Rust glue — this keeps our patch queue small and our contributions useful.
+- Consume via **libservo's Rust API** (`ServoBuilder`, `WebViewBuilder`, the delegate traits),
+  statically linked into a Rust application. The `servo_capi` C ABI is not used: with the browser
+  written in Rust it would only add a layer (C ABI, cbindgen header, C++ shim) to reconcile on every
+  rebase. Where libservo does not yet expose something we need, extend it upstream rather than
+  reaching around its API locally — this keeps our patch queue small and our contributions useful.
+  *Amended from the original `servo_capi` + C++ shim design; see §15.4 and §17.*
 
 ---
 
@@ -106,13 +109,13 @@ budgets in §11.**
 └───────────────┬─────────────────────────────────────────┘
                 │ QML properties / signals / slots
 ┌───────────────▼─────────────────────────────────────────┐
-│  libtuuli-qml  (C++17, Qt Quick plugin)                 │
-│   • TuuliWebView : QQuickFramebufferObject              │
+│  tuuli-qml + tuuli-core  (Rust, qmetaobject-rs)         │
+│   • WebView : QQuickFramebufferObject (cpp! node)       │
 │   • gesture recognition, IME proxy, permission plumbing │
 └───────────────┬─────────────────────────────────────────┘
-                │ servo_capi (C ABI, opaque pointers)
+                │ tuuli_core::engine traits → servo/backend (Rust)
 ┌───────────────▼─────────────────────────────────────────┐
-│  libservo.so  (Rust: script, layout, style, WebRender)  │
+│  libservo crate (script, layout, style, WebRender)      │
 └───────────────┬─────────────────────────────────────────┘
                 │ EGL / GLES 3.2 via libhybris
 ┌───────────────▼─────────────────────────────────────────┐
@@ -131,21 +134,29 @@ everything the sailjail profile permits. Mitigations:
 
 - Keep the sailjail profile as tight as the feature set allows (§9.1).
 - Persist session state to disk aggressively (§8.4) so a crash costs a second, not a session.
-- Revisit out-of-process content in M4 once upstream's story firms up. Design the C++ shim behind an
-  interface that could later be swapped for an IPC proxy without touching QML.
+- Revisit out-of-process content in M4 once upstream's story firms up. Design the Rust backend behind the
+  `tuuli_core::engine` traits so it could later be swapped for an IPC proxy without touching QML.
 
 ### 4.2 Threading
 
 | Thread | Owns |
 |---|---|
-| Qt main (GUI) | QML scene, input events, all `servo_capi` calls that mutate webview state |
-| Qt render | GL context, `QQuickFramebufferObject::Renderer`, Servo paint + swap |
+| Qt main (GUI) | QML scene, input events, the browser core, every libservo call, Servo's event loop, **and painting** |
 | Servo internal | script, layout, style, networking, image decode (Servo's own pools) |
 
-`servo_capi` calls are made from the GUI thread and marshalled onto the render thread only where the
-API requires an active GL context. All embedder callbacks from Servo are posted to the GUI thread via
-`QMetaObject::invokeMethod(Qt::QueuedConnection)` before touching any Qt object. No Qt object is ever
-touched from a Rust-owned thread.
+libservo's `Servo`, `WebView` and delegate types are single-thread types and `paint` is a method on
+the same `WebView` the GUI thread drives, so the original plan (paint on Qt's render thread, all other
+calls on the GUI thread, a lock between them) is not available to an embedder. Tuuli runs the Qt scene
+graph with the **basic render loop** (`QSG_RENDER_LOOP=basic`, set by the application before the
+`QGuiApplication` exists): the `QQuickFramebufferObject::Renderer` runs on the GUI thread with the
+scene-graph GL context current, and every GL call in the process is made on that one thread — which
+also retires the thread-affinity caveat in §5.3. The cost is that the scene graph no longer renders
+concurrently with QML; with one FBO item on one panel that is inside the §11 budget.
+
+Servo's `EventLoopWaker` is the only cross-thread entry: it posts a queued callback to the GUI thread,
+which spins Servo's event loop. Delegate callbacks arrive on the GUI thread from inside that spin and
+are queued as plain data; the Qt layer drains the queue afterwards and only then touches Qt objects. No
+Qt object is ever touched from a Rust-owned engine thread.
 
 ---
 
@@ -153,7 +164,7 @@ touched from a Rust-owned thread.
 
 ### 5.1 Approach: FBO into the Qt scene graph
 
-`TuuliWebView` derives from `QQuickFramebufferObject`. Its `Renderer::render()` runs on the Qt render
+The QML `WebView` derives from `QQuickFramebufferObject`. Its `Renderer::render()` runs on the Qt render
 thread with the scene-graph GL context current, drives one Servo frame, and leaves the result in the
 FBO texture that Qt then composites into the QML scene.
 
@@ -170,8 +181,7 @@ fallback as a live risk mitigation.
 
 ### 5.2 Rendering context ownership
 
-**Servo must not create its own EGL context.** Implement the `RenderingContext` interface (exposed
-through `servo_capi`) as a wrapper over the `QOpenGLContext` Qt has already created, so both sides
+**Servo must not create its own EGL context.** Implement libservo's `RenderingContext` trait as a wrapper over the `QOpenGLContext` Qt has already created, so both sides
 share one context and one hybris EGL display. Creating a second context risks divergent EGL configs
 and driver-specific failures on the Mali blob.
 
@@ -188,7 +198,8 @@ Requirements on the wrapper:
 The GL driver is an Android blob reached through libhybris. Expect:
 
 - **Thread-affinity strictness.** The blob is less forgiving than Mesa about contexts being made
-  current on unexpected threads. Constrain all GL to the Qt render thread.
+  current on unexpected threads. Constrain all GL to one thread; with the basic render loop (§4.2)
+  that is the GUI thread.
 - **EGL extension gaps.** Do not assume `EGL_KHR_fence_sync` or dmabuf import are available; probe
   and fall back.
 - **Driver-specific shader compile failures.** WebRender's shader set is validated against Mesa and
@@ -216,7 +227,7 @@ An M0 exit criterion is a WebRender-rendered page on the device, produced before
 
 Qt touch events arrive on `TuuliWebView`, are converted to Servo touch input events, and are
 forwarded with their raw coordinates in CSS pixels after device-pixel-ratio conversion. Servo owns
-the async touch pipeline (scroll, fling, pinch); the shim does not implement its own kinetic scroller.
+the async touch pipeline (scroll, fling, pinch); the embedder does not implement its own kinetic scroller.
 
 DPR is `QScreen::devicePixelRatio()` on the target panel. At ~394 ppi this is likely 2.0; confirm on
 hardware and do not hardcode.
@@ -240,7 +251,7 @@ the community Gecko builds; do not reproduce it.
 
 ### 6.3 Text input
 
-Servo signals focus of an editable element with an input-type hint. The shim maps this onto a hidden
+Servo signals focus of an editable element with an input-type hint. The IME proxy maps this onto a hidden
 QML `TextInput` proxy that Maliit attaches to:
 
 1. Servo reports editable focus + input type + current value + selection.
@@ -385,7 +396,7 @@ WebRequest-style network interception API.
 
 The point of M0 is to fail fast on the three things that could kill the project.
 
-1. `libservo` + `servo_capi` cross-compiles for `aarch64-unknown-linux-gnu` against the SFOS 5.2
+1. `libservo`, as a dependency of the Rust application, cross-compiles for `aarch64-unknown-linux-gnu` against the SFOS 5.2
    target sysroot, including **mozjs / SpiderMonkey**, which is the hardest dependency by a wide
    margin.
 2. WebRender's shader set compiles and renders on Mali-G610 through libhybris EGL.
@@ -444,24 +455,32 @@ Budget failures are release blockers for M3, not M2.
 
 ### 12.1 Toolchain
 
-- Build inside the **Sailfish Platform SDK** target root for correct glibc and system library versions.
-- Rust toolchain pinned by Servo's `rust-toolchain.toml`; do not float it.
-- Cross-compile: `--target aarch64-unknown-linux-gnu`, with `CC`, `CXX`, `AR` and
-  `PKG_CONFIG_SYSROOT_DIR` pointed at the SDK target root for C/C++ dependencies.
+- The application is a cargo workspace (`tuuli-core`, `tuuli-qml`, `tuuli-browser`); Qt is reached
+  through qmetaobject-rs, C++ only inside `cpp!` blocks. The mock-engine package builds inside the
+  **Sailfish Platform SDK** target root from vendored crates, for correct glibc, Qt 5.6 and system
+  library versions.
+- The Servo-linked binary (`servo/app`) is cross-compiled on the SDK host: `--target
+  aarch64-unknown-linux-gnu`, with `CC`, `CXX`, `AR`, `PKG_CONFIG_SYSROOT_DIR`,
+  `QT_INCLUDE_PATH`/`QT_LIBRARY_PATH` pointed at the SDK target root.
+- Rust toolchain for that build pinned by Servo's `rust-toolchain.toml`; do not float it. The
+  workspace itself declares `rust-version = 1.80`.
 - SpiderMonkey needs a recent Clang and builds its own object tree; it will not use the SDK's aged GCC.
   Expect to supply a separate Clang and to spend real time here.
-- Build `libservo` as a shared object consumed by the Qt plugin, not statically linked into the app
-  binary, to keep link times and RPM rebuild times sane.
+- libservo is a Rust crate and is **statically linked** into the `tuuli-browser` binary. Rust has no
+  stable dylib ABI and a `cdylib` would reintroduce the C ABI this design dropped; the link-time cost
+  is paid once, by the cross-build script, not by UI iteration (§12.2).
 
 ### 12.2 RPM
 
-- `tuuli-browser` — app, QML, Silica UI, `.desktop`, sailjail profile.
-- `libtuuli-qml` — Qt Quick plugin and C++ shim.
-- `libservo` — engine shared object, versioned to the pinned Servo release.
-- `tuuli-browser-debuginfo`.
+- `tuuli-browser` — app with the mock engine, QML, Silica UI, `.desktop`, sailjail profile; built on
+  the SDK target from vendored crates.
+- `tuuli-browser-servo` — the same binary with libservo statically linked (`Provides`/`Conflicts:
+  tuuli-browser`); versioned to Tuuli, with the pinned Servo release recorded in the spec.
+- `tuuli-browser-debuginfo` for each.
 
-Split the engine into its own subpackage so engine rebases and UI iteration are independently
-shippable.
+Two source packages keep engine rebases and UI iteration independently shippable: a rebase rebuilds
+`tuuli-browser-servo` only, and the QML chrome is installed as files by both packages, so UI work never
+needs the engine rebuilt.
 
 ### 12.3 Distribution
 
@@ -471,8 +490,8 @@ statically-built Rust engine will not pass, and there is no point pretending oth
 ### 12.4 Upstream tracking
 
 - Pin to a Servo release tag. Rebase on a monthly cadence, aligned with Servo's release rhythm.
-- `libservo` and `servo_capi` are pre-1.0 and churn. Budget one to three days per rebase and keep the
-  C++ shim thin so churn is absorbed in one layer.
+- `libservo` is pre-1.0 and churns. Budget one to three days per rebase and keep the Rust backend
+  (`servo/backend`) thin so churn is absorbed in one layer.
 - Maintain a public patch queue. Anything carried for more than two rebases should be proposed
   upstream or abandoned.
 
@@ -480,7 +499,9 @@ statically-built Rust engine will not pass, and there is no point pretending oth
 
 ## 13. Testing
 
-- **Unit:** shim logic (event conversion, DPR maths, gesture arbitration) as host-side Qt tests.
+- **Unit:** core logic (event conversion, DPR maths, gesture arbitration, IME edit planning, tabs,
+  session and stores) as Qt-free `cargo test`s in `tuuli-core`; the Qt layer and the FBO render path
+  through a `tuuli-browser` smoke test under Xvfb + Mesa.
 - **Rendering:** reference screenshots for the ten-page corpus, compared per rebase to catch engine
   regressions early.
 - **Manual device matrix:** the corpus plus a checklist of Sailfish integrations (VKB, share, transfer,
@@ -501,7 +522,7 @@ statically-built Rust engine will not pass, and there is no point pretending oth
 | Servo web compat too poor for daily use | High | Honest positioning as second browser; upstream compat bugs |
 | FBO blit cost breaks frame budget | High | Fallback to `wl_subsurface` with QML chrome as separate surface |
 | Qt 5.6 lacks something the integration needs | Medium | Verified in M0; Qt 5.6 has `QQuickFramebufferObject` |
-| `libservo` API churn outpaces maintenance capacity | Medium | Pin releases, thin shim, upstream patches |
+| `libservo` API churn outpaces maintenance capacity | Medium | Pin releases, thin backend, upstream patches |
 | No sandbox is unacceptable to users | Medium | Disclose plainly; tight sailjail profile; M4 work |
 | Battery regression vs Gecko | Medium | §11 budget as release gate; hardware decode mandatory |
 | Jolla Phone hardware differs from published preliminary specs | Low | Verify on device before M1 |
@@ -514,7 +535,9 @@ statically-built Rust engine will not pass, and there is no point pretending oth
 2. Is the Jolla Phone (2026) adaptation libhybris-based, or is any part of the graphics stack mainline?
    This spec assumes libhybris throughout; confirm before M0.
 3. Does upstream Servo want mobile-Linux as a recognised `UserAgentPlatform`, and can we land it?
-4. Can `servo_capi` reach the coverage we need by M2, or do we need a Rust-side shim in the interim?
+4. ~~Can `servo_capi` reach the coverage we need by M2, or do we need a Rust-side shim in the interim?~~
+   **Resolved:** the browser is Rust and consumes libservo's Rust API directly (§3.3). The Rust-side
+   backend (`servo/backend`) is the permanent design, not an interim shim; `servo_capi` is not used.
 5. Does gst-droid's decoder expose the surface format WebRender can sample without a CPU copy?
 6. Does Kumo's Servo backend (Wayland mobile Linux, added spring 2026) have solved problems we can
    borrow rather than rediscover? Talk to them early.
@@ -523,8 +546,21 @@ statically-built Rust engine will not pass, and there is no point pretending oth
 
 ## 16. References
 
-- Servo releases and `servo_capi` — github.com/servo/servo
+- Servo releases and the `libservo` crate — github.com/servo/servo
 - Servo embedding docs — book.servo.org, doc.servo.org
 - Kumo, Wayland mobile browser with Servo and WebKit backends — github.com/catacombing/kumo
 - Sailfish Browser (Gecko/EmbedLite reference architecture) — github.com/sailfishos/sailfish-browser
 - Community Gecko ESR140/ESR153 ports for SFOS 5.1/5.2 — github.com/smatkovi/gecko-dev
+
+---
+
+## 17. Amendments
+
+- **Rust design (2026-09).** The implementation is Rust throughout: a cargo workspace with Qt reached
+  through qmetaobject-rs and libservo consumed as a crate. Amended: §3.3 (no `servo_capi`), §4
+  (layers), §4.2 (basic render loop, painting on the GUI thread), §5.2–5.3 (rendering context, GL
+  thread), §12.1–12.2 (toolchain, packages: no `libtuuli-qml`, no shared `libservo`), §12.4, §13,
+  §15.4. See `docs/ARCHITECTURE.md` for the reasoning.
+- **Paths.** Sailjail confines the app to `~/.local/share/org.tuuli/browser/` and siblings (from the
+  `.desktop` organisation/application names); read `~/.local/share/tuuli/` in §8.4 with that
+  substitution.

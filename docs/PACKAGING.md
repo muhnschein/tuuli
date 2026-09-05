@@ -1,39 +1,51 @@
 # Packaging
 
-Spec 12.2 asks for `tuuli-browser`, `libtuuli-qml`, `libservo` and
-`tuuli-browser-debuginfo`, with the engine split so engine rebases and UI
-iteration ship independently.
+Spec 12.2 originally asked for `tuuli-browser`, `libtuuli-qml`, `libservo`
+and `tuuli-browser-debuginfo`.  With the engine consumed as a Rust crate
+there is no C ABI to split a shared `libservo` on and no Qt Quick plugin:
+Rust has no stable dylib ABI, and a `cdylib` would reintroduce the C ABI
+the design dropped.  The engine is therefore statically linked into the
+`tuuli-browser` binary, and the spec's independence requirement (engine
+rebases and UI iteration shipping separately) is met by two source
+packages instead:
 
-Two source packages deliver that:
+| Spec file | Binary RPMs | Engine | Built |
+|---|---|---|---|
+| `rpm/tuuli-browser.spec` | `tuuli-browser`, `tuuli-browser-debuginfo` | mock | on the SDK target with cargo, from vendored crates |
+| `rpm/tuuli-browser-servo.spec` | `tuuli-browser-servo` (`Provides`/`Conflicts: tuuli-browser`), debuginfo | Servo (`%servo_tag`) | from the tarball `servo/build.sh` produces, or `--with from_source` |
 
-| Spec file | Binary RPMs | Version follows |
-|---|---|---|
-| `rpm/tuuli-browser.spec` | `tuuli-browser`, `libtuuli-qml`, `tuuli-browser-debuginfo` | Tuuli releases |
-| `rpm/libservo.spec` | `libservo`, `libservo-devel`, `libservo-debuginfo` | the pinned Servo tag |
+The QML chrome is installed as files by both packages
+(`/usr/share/tuuli-browser/qml`), so UI iteration on a device never needs
+the engine rebuilt: edit the files in place or reinstall the mock package.
+An engine rebase rebuilds `tuuli-browser-servo` only.
 
-A single spec with an engine subpackage would rebuild Servo on every UI
-change and tie the engine's version to Tuuli's; two source packages are
-what "independently shippable" means in RPM terms.
+## tuuli-browser (mock engine)
 
-`libtuuli-qml` contains both `libtuuli.so.0` (the shim and models) and the
-`Tuuli` QML plugin; splitting them further buys nothing.
+`Source0` is the git archive and `Source1` the `cargo vendor` tarball;
+`tools/vendor.sh` makes both.  The spec unpacks the vendor tree, writes a
+`.cargo/config.toml` that redirects crates.io to it and builds
+`cargo build --release --offline --frozen -p tuuli-browser --features
+sailfish`.  `QMAKE` points qttypes at the target's Qt.  CI runs exactly
+this on the SDK target, which is the only place the Qt 5.6 constraint
+(spec 3.2) is enforced; it is also a legitimate install for UI iteration
+on a device.
 
-## libservo modes
+## tuuli-browser-servo
 
-- default: installs the prebuilt tarball from `servo/build-libservo.sh`
-  (`Source1`).  This is how development builds are made.
-- `--with from_source`: builds with cargo inside the target from the tag
-  tarball and vendored crates (`Source0`, `Source2`, `Source3`).  This is
-  the mode Chum/OBS needs for reproducibility; it needs `rust`, `cargo`,
-  `clang` and `llvm` in the target and a very patient build host.  Whether
-  the target's toolchain can build SpiderMonkey at all is an M0 question.
+- default: installs `bin/tuuli-browser` from
+  `tuuli-browser-servo-<version>-aarch64.tar.xz` (`Source1`), the output
+  of `servo/build.sh`.  This is how development builds are made.
+- `--with from_source`: builds `servo/app` with cargo inside the target
+  from the git archive (`Source0`) and the vendored crates of the Servo
+  dependency tree (`Source2`, also from `servo/build.sh`).  This is the
+  mode Chum/OBS needs for reproducibility; it needs `rust`, `cargo`,
+  `clang` and `llvm` in the target and a very patient build host.
+  Whether the target's toolchain can build SpiderMonkey at all is an M0
+  question (spec 12.1).
 
-## tuuli-browser modes
-
-- default: `BuildRequires: libservo-devel`.
-- `--with mock_engine`: no engine dependency, mock engine compiled in.
-  CI uses this on the SDK target to keep the Qt 5.6 build honest; it is
-  also a legitimate install for UI iteration on device.
+The package pulls in `gstreamer1.0-droid`, `fontconfig` and
+`ca-certificates` because the engine uses the system decoders, fonts and
+CA bundle (spec 8).
 
 ## Distribution
 
@@ -47,4 +59,6 @@ rules.  The store descriptions must carry the threat-model disclosure from
 `src/app/tuuli-browser.desktop` declares no `MimeType` and no
 `x-scheme-handler`: Tuuli does not register as a URL handler before M4
 (spec N1).  `Exec` takes no `%U` for the same reason; `tuuli-browser
-<url>` from a shell still works.
+<url>` from a shell still works.  The `[X-Sailjail]` section is the
+sandbox profile; `Location`, `Camera` and `Microphone` are added only with
+the milestone that uses them (spec 9.1).
