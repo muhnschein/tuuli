@@ -55,6 +55,39 @@ const FLAG_ACCEPT: u32 = 1;
 const FLAG_KEEP_GRAB: u32 = 2;
 const RENDER_PAINTED: u32 = 0x8000_0000;
 
+// The GL facts logger lives in a block of its own: the main block below is
+// close to the `cpp!` macro's expansion limit.
+cpp! {{
+    #include <QtGui/QOpenGLContext>
+    #include <QtGui/QOpenGLFunctions>
+    #include <QtGui/QSurfaceFormat>
+    #include <cstdio>
+
+    // Spec 10 / M0: the driver strings and the GL level WebRender will get,
+    // printed once so a device's journal records them.
+    static void tuuliLogGlFacts(QOpenGLContext *gl) {
+        static bool logged = false;
+        if (logged) return;
+        logged = true;
+        QOpenGLFunctions *f = gl->functions();
+        const char *vendor = reinterpret_cast<const char *>(f->glGetString(GL_VENDOR));
+        const char *renderer = reinterpret_cast<const char *>(f->glGetString(GL_RENDERER));
+        const char *version = reinterpret_cast<const char *>(f->glGetString(GL_VERSION));
+        const char *glsl = reinterpret_cast<const char *>(f->glGetString(GL_SHADING_LANGUAGE_VERSION));
+        fprintf(stderr, "tuuli: GL vendor=\"%s\" renderer=\"%s\" version=\"%s\" glsl=\"%s\"\n",
+                vendor ? vendor : "?", renderer ? renderer : "?", version ? version : "?", glsl ? glsl : "?");
+        const QSurfaceFormat fmt = gl->format();
+        fprintf(stderr, "tuuli: GL context %s %d.%d, %d extensions; image_external=%d disjoint_timer=%d bgra8888=%d khr_debug=%d\n",
+                gl->isOpenGLES() ? "GLES" : "GL", fmt.majorVersion(), fmt.minorVersion(),
+                int(gl->extensions().size()),
+                int(gl->hasExtension("GL_OES_EGL_image_external")),
+                int(gl->hasExtension("GL_EXT_disjoint_timer_query")),
+                int(gl->hasExtension("GL_EXT_texture_format_BGRA8888")),
+                int(gl->hasExtension("GL_KHR_debug")));
+    }
+
+}}
+
 cpp! {{
     #include <qmetaobject_rust.hpp>
     #include <vector>
@@ -192,6 +225,7 @@ cpp! {{
         QOpenGLFramebufferObject *fbo = framebufferObject();
         QOpenGLContext *gl = QOpenGLContext::currentContext();
         if (!fbo || !gl) return;
+        tuuliLogGlFacts(gl);
         unsigned handle = fbo->handle();
         unsigned w = unsigned(fbo->width());
         unsigned h = unsigned(fbo->height());
@@ -381,6 +415,7 @@ pub struct WebViewItem {
     gesture: GestureConfig,
     ctx: Option<Rc<QtRenderingContext>>,
     init_failed: bool,
+    logged_screen: bool,
     size: Size,
     screen_dpr: f64,
     screen_dpi: f64,
@@ -435,6 +470,7 @@ impl Default for WebViewItem {
             gesture,
             ctx: None,
             init_failed: false,
+            logged_screen: false,
             size: Size::default(),
             screen_dpr: 1.0,
             screen_dpi: 0.0,
@@ -882,6 +918,14 @@ impl WebViewItemImpl for WebViewItem {
         self.gesture.screen = Size::new(width as f64, height as f64);
         self.arbiter.set_config(self.gesture.clone());
         self.resolve_dpr();
+        // Spec 15 / M0: the panel facts the budgets depend on, once per run.
+        if !self.logged_screen {
+            self.logged_screen = true;
+            eprintln!(
+                "tuuli: window {width}x{height}, Qt dpr {dpr}, physical dpi {dpi:.0}, refresh {:.0} Hz, content dpr {}",
+                self.refresh_hz, self.contentDevicePixelRatio
+            );
+        }
     }
 
     fn render(

@@ -73,6 +73,12 @@ panel this is inside the §11 budget.  The gain is that spec §5.3's
 thread-affinity risk on the hybris driver disappears: every GL call of
 the process is made on one thread.
 
+Verified on the Jolla Phone (SFOS 5.2, 2026-09-05): the `silica-qt5`
+booster, which creates the application object and the view before
+`main()` runs, also ends up on the basic loop, and so does a direct
+`sailjail` launch; the first frame logs which thread painted it, and the
+journal shows the GUI thread from both.
+
 Rules, in code:
 
 - The core (`tuuli_core::Browser`) lives in a thread-local on the GUI

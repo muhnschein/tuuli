@@ -57,8 +57,13 @@ What exists and is tested on the host:
   a GitHub Actions workflow that builds the RPM on demand; perf-budget
   and screenshot tooling for the ten-page corpus.
 
-What does **not** exist yet, because it needs the device and the engine
-build (M0 exit criteria, [docs/M0-CHECKLIST.md](docs/M0-CHECKLIST.md)):
+Verified on a Jolla Phone (2026) with the mock-engine RPM from the `rpm`
+workflow: the chrome, the sailjail profile, the data paths, the
+translations, and the basic render loop under the booster.  Jolla's
+Harbour validator accepts that package.
+
+What does **not** exist yet, because it needs the engine build (M0 exit
+criteria, [docs/M0-CHECKLIST.md](docs/M0-CHECKLIST.md)):
 
 - a Servo-linked `harbour-tuuli` built for the SFOS 5.2 aarch64 sysroot
   (the `rpm.yml` workflow with engine `servo` is the spike);

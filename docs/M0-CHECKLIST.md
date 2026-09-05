@@ -29,8 +29,13 @@ whole approach.
 
 ## 2. WebRender on Mali-G610 through libhybris
 
+- [x] The render loop is the basic one on the device, under the
+      silica-qt5 booster as well as from `sailjail /usr/bin/harbour-tuuli`:
+      the journal shows `tuuli: first frame rendered on the GUI thread`
+      from both launch paths (Jolla Phone, SFOS 5.2, 2026-09-05, mock
+      engine).  The design question in ARCHITECTURE.md is settled.
 - [ ] Engine initialisation inside the first `render()` succeeds
-      (shader compile) with `QSG_RENDER_LOOP=basic`.
+      (shader compile).
 - [ ] A page paints into the `QQuickFramebufferObject` FBO and appears the
       right way up (check `mirrorVertically`).
 - [ ] Probe `EGL_KHR_fence_sync` and dmabuf import; record what is missing.
@@ -44,10 +49,17 @@ whole approach.
 
 ## 3. Plausible frame rate in a bare window
 
-- [ ] The mock-engine RPM (`rpm` workflow, engine `mock`) runs the
-      chrome on the device, launched as `sailjail /usr/bin/harbour-tuuli`
-      (validates Qt 5.6, Silica, the sailjail profile, the data paths,
-      and whether Transfer Engine is reachable from inside the sandbox).
+- [x] The mock-engine RPM (`rpm` workflow, engine `mock`) runs the
+      chrome on the device, from the app grid (the invoker enforcing the
+      sandbox) and as `sailjail /usr/bin/harbour-tuuli`: Qt 5.6, Silica,
+      the sailjail profile, the data paths and the engineering-English
+      catalog all check out (2026-09-05).  Jolla's validator accepts the
+      package outright.  At exit the driver logs two `invalid handle:
+      (nil)` lines and "EGLDisplay was not properly terminated"; to look
+      at once the engine is in, since that is when GL teardown order
+      matters.
+- [ ] Transfer Engine reachable from inside the sandbox: start a download
+      and look for it in Settings → Transfers (needs the engine).
 - [ ] The servo RPM shows a real page; scroll and pinch through Servo's own
       touch pipeline.
 - [ ] Frame statistics overlay reads well under 16.7 ms for an article page.
@@ -55,7 +67,15 @@ whole approach.
 
 ## Facts to record on a physical unit (spec 3.1, 15)
 
-- [ ] SoC / GPU / driver strings from `dmesg` and `eglQueryString`.
+The app prints most of these itself on its first frame (`tuuli: GL
+vendor=... renderer=... version=...`, `tuuli: GL context GLES x.y, N
+extensions; ...`, `tuuli: window WxH, Qt dpr, physical dpi, refresh,
+content dpr`); copy the lines from the journal into this list.
+
+- [x] SoC: MediaTek `mt6858`; Mali GPU through libhybris
+      (`/vendor/lib64/egl/mt6858/libGLES_mali.so`), from the journal of the
+      mock-engine run.  Driver and GL version strings: from the
+      first-frame log of the next build.
 - [ ] Panel refresh rate (`QScreen::refreshRate`).  Update
       `tools/budgets.json` `panel_hz`.
 - [ ] `QScreen::devicePixelRatio` and `physicalDotsPerInch`; the value
