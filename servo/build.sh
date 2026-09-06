@@ -164,11 +164,18 @@ fi
 CROSS_TARGET_FLAGS="--target=$CLANG_TARGET --sysroot=$SYSROOT --gcc-install-dir=$GCC_INSTALL"
 CROSS_FLAGS="$CROSS_TARGET_FLAGS -fuse-ld=lld"
 CROSS_CXX_INCLUDES="-isystem $CXX_INCLUDE${CXX_TARGET_INCLUDE:+ -isystem $CXX_TARGET_INCLUDE}"
+# Qt 5.6's qtypetraits.h implements is_unsigned as (T(0) < T(-1)), which
+# casts -1 to every enum it is instantiated with.  Since clang 16 that is
+# an error by default, so every translation unit including a Qt header --
+# qttypes, the cpp crate's closures, our own -- fails on the target's Qt.
+# The cast is well defined for the flag enums Qt uses it on, and the
+# target's own gcc compiles it; nothing here can change Qt 5.6.
+CROSS_CXX_FLAGS="$CROSS_FLAGS $CROSS_CXX_INCLUDES -Wno-enum-constexpr-conversion"
 export CC_aarch64_unknown_linux_gnu=clang
 export CXX_aarch64_unknown_linux_gnu=clang++
 export AR_aarch64_unknown_linux_gnu=llvm-ar
 export CFLAGS_aarch64_unknown_linux_gnu="$CROSS_FLAGS"
-export CXXFLAGS_aarch64_unknown_linux_gnu="$CROSS_FLAGS $CROSS_CXX_INCLUDES"
+export CXXFLAGS_aarch64_unknown_linux_gnu="$CROSS_CXX_FLAGS"
 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=clang
 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=--target=$CLANG_TARGET -C link-arg=--sysroot=$SYSROOT -C link-arg=--gcc-install-dir=$GCC_INSTALL -C link-arg=-fuse-ld=lld -C link-arg=-Wl,--as-needed -C link-arg=-L$LIBDIR"
 # Qt from the sysroot: qttypes takes these instead of running qmake, which
@@ -184,7 +191,7 @@ export PKG_CONFIG_ALLOW_CROSS=1
 export PKG_CONFIG_SYSROOT_DIR="$SYSROOT"
 export PKG_CONFIG_LIBDIR="$LIBDIR/pkgconfig:$SYSROOT/usr/share/pkgconfig"
 # bindgen (mozjs, gstreamer-sys) must see the sysroot headers, not the host's.
-export BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_gnu="$CROSS_TARGET_FLAGS $CROSS_CXX_INCLUDES"
+export BINDGEN_EXTRA_CLANG_ARGS_aarch64_unknown_linux_gnu="$CROSS_TARGET_FLAGS $CROSS_CXX_INCLUDES -Wno-enum-constexpr-conversion"
 # SpiderMonkey: build from source with clang against the sysroot.
 export MOZJS_FROM_SOURCE=1
 export MOZJS_CREATE_ARCHIVE=0
@@ -198,7 +205,7 @@ set(CMAKE_CXX_COMPILER clang++)
 set(CMAKE_C_COMPILER_TARGET $CLANG_TARGET)
 set(CMAKE_CXX_COMPILER_TARGET $CLANG_TARGET)
 set(CMAKE_C_FLAGS_INIT "$CROSS_FLAGS")
-set(CMAKE_CXX_FLAGS_INIT "$CROSS_FLAGS $CROSS_CXX_INCLUDES")
+set(CMAKE_CXX_FLAGS_INIT "$CROSS_CXX_FLAGS")
 set(CMAKE_EXE_LINKER_FLAGS_INIT "-fuse-ld=lld")
 set(CMAKE_SHARED_LINKER_FLAGS_INIT "-fuse-ld=lld")
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
@@ -227,11 +234,22 @@ fi
 # the link name, which come from different packages than the C ones.
 printf '#include <string>\nint main(void){ return std::string("x").size() == 1 ? 0 : 1; }\n' > "$OUT/conftest.cc"
 # shellcheck disable=SC2086 # the cross flags are several words.
-if clang++ $CROSS_FLAGS $CROSS_CXX_INCLUDES -o "$OUT/conftest" "$OUT/conftest.cc" 2> "$OUT/conftest.log"; then
+if clang++ $CROSS_CXX_FLAGS -o "$OUT/conftest" "$OUT/conftest.cc" 2> "$OUT/conftest.log"; then
     rm -f "$OUT/conftest" "$OUT/conftest.cc" "$OUT/conftest.log"
 else
     cat "$OUT/conftest.log" >&2
     die "the cross toolchain cannot link C++ against $SYSROOT (message above)"
+fi
+# And the target's Qt headers, which qttypes, the cpp crate and the two
+# Qt crates all compile against: Qt 5.6 against a current clang is its own
+# question, separate from whether the sysroot is sound.
+printf '#include <QtCore/QByteArray>\n#include <QtGui/QGuiApplication>\nQByteArray tuuli_preflight(void){ return QByteArray("x"); }\n' > "$OUT/conftest.cc"
+# shellcheck disable=SC2086 # the cross flags are several words.
+if clang++ $CROSS_CXX_FLAGS -I"$QT_INCLUDE_PATH" -std=c++11 -c -o "$OUT/conftest.o" "$OUT/conftest.cc" 2> "$OUT/conftest.log"; then
+    rm -f "$OUT/conftest.o" "$OUT/conftest.cc" "$OUT/conftest.log"
+else
+    cat "$OUT/conftest.log" >&2
+    die "the cross toolchain cannot compile against the target's Qt headers (message above)"
 fi
 
 # ---- Build ---------------------------------------------------------------
