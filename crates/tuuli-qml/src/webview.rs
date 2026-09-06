@@ -58,6 +58,12 @@ const RENDER_PAINTED: u32 = 0x8000_0000;
 // The GL facts logger lives in a block of its own: the main block below is
 // close to the `cpp!` macro's expansion limit.
 cpp! {{
+    #include <QtCore/QByteArray>
+    // QOpenGLContext::extensions() returns QSet<QByteArray>.  Qt 5.6 only
+    // forward-declares QSet here; a newer Qt pulls the definition in
+    // transitively, so the host build never needed this line and the
+    // device build did.
+    #include <QtCore/QSet>
     #include <QtGui/QOpenGLContext>
     #include <QtGui/QOpenGLFunctions>
     #include <QtGui/QSurfaceFormat>
