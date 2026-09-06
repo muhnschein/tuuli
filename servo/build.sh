@@ -171,29 +171,23 @@ CROSS_CXX_INCLUDES="-isystem $CXX_INCLUDE${CXX_TARGET_INCLUDE:+ -isystem $CXX_TA
 # The cast is well defined for the flag enums Qt uses it on, and the
 # target's own gcc compiles it; nothing here can change Qt 5.6.
 CROSS_CXX_FLAGS="$CROSS_FLAGS $CROSS_CXX_INCLUDES -Wno-enum-constexpr-conversion"
-export CC_aarch64_unknown_linux_gnu=clang
-export CXX_aarch64_unknown_linux_gnu=clang++
+# The flags travel in the compiler commands, not only in CFLAGS.
+# SpiderMonkey's configure (mozjs_sys reads CC/CXX/CFLAGS/CXXFLAGS by the
+# cc-rs rules, then makefile.cargo hands them to js/src/configure) runs its
+# early probes as the bare compiler plus mozilla's own --target, without
+# the CFLAGS it was given -- which is why the libstdc++ probe looked for
+# <cstddef> outside the sysroot.  Anything that runs the compiler at all
+# gets the sysroot this way.  -Qunused-arguments keeps the linker choice
+# from warning on compile-only probes.
+CROSS_CC="clang $CROSS_FLAGS -Qunused-arguments"
+CROSS_CXX="clang++ $CROSS_CXX_FLAGS -Qunused-arguments"
+export CC_aarch64_unknown_linux_gnu="$CROSS_CC"
+export CXX_aarch64_unknown_linux_gnu="$CROSS_CXX"
 export AR_aarch64_unknown_linux_gnu=llvm-ar
 export CFLAGS_aarch64_unknown_linux_gnu="$CROSS_FLAGS"
 export CXXFLAGS_aarch64_unknown_linux_gnu="$CROSS_CXX_FLAGS"
 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=clang
 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_RUSTFLAGS="-C link-arg=--target=$CLANG_TARGET -C link-arg=--sysroot=$SYSROOT -C link-arg=--gcc-install-dir=$GCC_INSTALL -C link-arg=-fuse-ld=lld -C link-arg=-Wl,--as-needed -C link-arg=-L$LIBDIR"
-# SpiderMonkey's configure is not the cc crate: it reads the unsuffixed
-# CFLAGS/CXXFLAGS/LDFLAGS out of the environment and compiles its probes
-# with those, so the target-suffixed variables above never reached it and
-# it looked for <cstddef> in the host's include path.  The suffixed names
-# stay for the cc crate, which prefers them; these carry the same flags to
-# everything that reads the plain ones (mozjs, autoconf, libtool).
-export CFLAGS="$CROSS_FLAGS"
-export CXXFLAGS="$CROSS_CXX_FLAGS"
-export LDFLAGS="$CROSS_FLAGS -L$LIBDIR"
-# The host compiler keeps its own, empty, set: mozjs and cc both read
-# these first for anything built to run on the build machine, and a host
-# tool compiled with the target's sysroot would not run.
-export HOST_CFLAGS=""
-export HOST_CXXFLAGS=""
-export HOST_LDFLAGS=""
-
 # Qt from the sysroot: qttypes takes these instead of running qmake, which
 # it cannot (the target's qmake is an aarch64 binary).
 export QT_INCLUDE_PATH="$SYSROOT/usr/include/qt5"
@@ -235,13 +229,13 @@ CM
 # startup object or link name fails all of them the same way, an hour into
 # the build.  One link here says so in a second, with the linker's own
 # message.
-# The checks compile through $CFLAGS/$CXXFLAGS rather than the internal
-# variables, so they exercise the same route the sub-builds read.
+# The checks run $CROSS_CC and $CROSS_CXX, the compiler commands the
+# sub-builds are handed, rather than flags only this script assembles.
 log "checking that the cross toolchain links"
 mkdir -p "$OUT"
 printf 'int main(void){return 0;}\n' > "$OUT/conftest.c"
-# shellcheck disable=SC2086 # the cross flags are several words.
-if clang $CFLAGS -o "$OUT/conftest" "$OUT/conftest.c" 2> "$OUT/conftest.log"; then
+# shellcheck disable=SC2086 # the compiler command is several words.
+if $CROSS_CC -o "$OUT/conftest" "$OUT/conftest.c" 2> "$OUT/conftest.log"; then
     llvm-readelf -h "$OUT/conftest" | grep -q AArch64 || die "the preflight binary is not aarch64"
     rm -f "$OUT/conftest" "$OUT/conftest.c" "$OUT/conftest.log"
 else
@@ -253,8 +247,8 @@ fi
 # <cstddef> is the header SpiderMonkey's configure probes for, and the
 # one a sysroot-less C++ command line fails to find first.
 printf '#include <cstddef>\n#include <string>\nint main(void){ return std::string("x").size() == 1 ? 0 : 1; }\n' > "$OUT/conftest.cc"
-# shellcheck disable=SC2086 # the cross flags are several words.
-if clang++ $CXXFLAGS -o "$OUT/conftest" "$OUT/conftest.cc" 2> "$OUT/conftest.log"; then
+# shellcheck disable=SC2086 # the compiler command is several words.
+if $CROSS_CXX -o "$OUT/conftest" "$OUT/conftest.cc" 2> "$OUT/conftest.log"; then
     rm -f "$OUT/conftest" "$OUT/conftest.cc" "$OUT/conftest.log"
 else
     cat "$OUT/conftest.log" >&2
@@ -264,12 +258,24 @@ fi
 # Qt crates all compile against: Qt 5.6 against a current clang is its own
 # question, separate from whether the sysroot is sound.
 printf '#include <QtCore/QByteArray>\n#include <QtGui/QGuiApplication>\nQByteArray tuuli_preflight(void){ return QByteArray("x"); }\n' > "$OUT/conftest.cc"
-# shellcheck disable=SC2086 # the cross flags are several words.
-if clang++ $CXXFLAGS -I"$QT_INCLUDE_PATH" -std=c++11 -c -o "$OUT/conftest.o" "$OUT/conftest.cc" 2> "$OUT/conftest.log"; then
+# shellcheck disable=SC2086 # the compiler command is several words.
+if $CROSS_CXX -I"$QT_INCLUDE_PATH" -std=c++11 -c -o "$OUT/conftest.o" "$OUT/conftest.cc" 2> "$OUT/conftest.log"; then
     rm -f "$OUT/conftest.o" "$OUT/conftest.cc" "$OUT/conftest.log"
 else
     cat "$OUT/conftest.log" >&2
     die "the cross toolchain cannot compile against the target's Qt headers (message above)"
+fi
+
+# The shape SpiderMonkey's configure uses: the compiler command alone,
+# with no CFLAGS behind it.  This is the check run 12 needed and did not
+# have; if it passes, mozjs's own probes see the sysroot.
+printf '#include <cstddef>\nint main(void){ return 0; }\n' > "$OUT/conftest.cc"
+# shellcheck disable=SC2086 # the compiler command is several words.
+if $CROSS_CXX "$OUT/conftest.cc" -c -o "$OUT/conftest.o" 2> "$OUT/conftest.log"; then
+    rm -f "$OUT/conftest.o" "$OUT/conftest.cc" "$OUT/conftest.log"
+else
+    cat "$OUT/conftest.log" >&2
+    die "the compiler command alone cannot find the sysroot's C++ headers, which is what SpiderMonkey's configure probes with (message above)"
 fi
 
 # ---- Build ---------------------------------------------------------------
