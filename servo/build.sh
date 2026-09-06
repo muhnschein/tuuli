@@ -206,6 +206,34 @@ set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 CM
 
+# ---- Toolchain preflight -------------------------------------------------
+# Every C and C++ dependency (jemalloc, SpiderMonkey, the -sys crates)
+# configures itself by linking a test program, and a sysroot missing one
+# startup object or link name fails all of them the same way, an hour into
+# the build.  One link here says so in a second, with the linker's own
+# message.
+log "checking that the cross toolchain links"
+mkdir -p "$OUT"
+printf 'int main(void){return 0;}\n' > "$OUT/conftest.c"
+# shellcheck disable=SC2086 # the cross flags are several words.
+if clang $CROSS_FLAGS -o "$OUT/conftest" "$OUT/conftest.c" 2> "$OUT/conftest.log"; then
+    llvm-readelf -h "$OUT/conftest" | grep -q AArch64 || die "the preflight binary is not aarch64"
+    rm -f "$OUT/conftest" "$OUT/conftest.c" "$OUT/conftest.log"
+else
+    cat "$OUT/conftest.log" >&2
+    die "the cross toolchain cannot link against $SYSROOT (message above)"
+fi
+# C++ too: mozjs and the C++ -sys crates need the libstdc++ headers and
+# the link name, which come from different packages than the C ones.
+printf '#include <string>\nint main(void){ return std::string("x").size() == 1 ? 0 : 1; }\n' > "$OUT/conftest.cc"
+# shellcheck disable=SC2086 # the cross flags are several words.
+if clang++ $CROSS_FLAGS $CROSS_CXX_INCLUDES -o "$OUT/conftest" "$OUT/conftest.cc" 2> "$OUT/conftest.log"; then
+    rm -f "$OUT/conftest" "$OUT/conftest.cc" "$OUT/conftest.log"
+else
+    cat "$OUT/conftest.log" >&2
+    die "the cross toolchain cannot link C++ against $SYSROOT (message above)"
+fi
+
 # ---- Build ---------------------------------------------------------------
 FEATURES="sailfish"
 if [ "$MEDIA" = 1 ]; then

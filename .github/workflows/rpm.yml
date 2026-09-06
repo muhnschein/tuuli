@@ -234,18 +234,46 @@ jobs:
                   --exclude=./etc/shadow --exclude=./etc/shadow- \
                   --exclude=./etc/gshadow --exclude=./etc/gshadow- \
                   --exclude=./usr/share/lipstick/devicelock \
-                  . 2>/dev/null | (cd /out && tar -xf - --no-same-owner --no-same-permissions) || true'
+                  . 2>/dev/null | (cd /out && tar -xf - --no-same-owner --no-same-permissions) || true
+              # -lgcc_s and -lstdc++: the linker resolves those through the
+              # unsuffixed .so, which a device root has no reason to carry
+              # (it is in the -devel package, and libgcc has none).  Point
+              # one at whichever versioned runtime the target has; if the
+              # target has none, take the tooling cross gcc-s copy, which
+              # is the same library the device loads at run time.
+              for lib in libgcc_s libstdc++; do
+                have=""
+                for d in /out/usr/lib64 /out/lib64 /out/usr/lib; do
+                  if [ -d "$d" ]; then
+                    for c in "$d/$lib".so.[0-9]*; do
+                      if [ -e "$c" ]; then have="$c"; break; fi
+                    done
+                  fi
+                  if [ -n "$have" ]; then break; fi
+                done
+                if [ -z "$have" ]; then
+                  src=$(find /srv/mer/toolings -name "$lib.so.[0-9]*" -path "*aarch64*" 2>/dev/null | head -1)
+                  if [ -n "$src" ]; then
+                    mkdir -p /out/usr/lib64
+                    cp -a "$src" /out/usr/lib64/
+                    have="/out/usr/lib64/$(basename "$src")"
+                    echo "$lib taken from the tooling: $src"
+                  fi
+                fi
+                if [ -n "$have" ]; then
+                  ln -sf "$(basename "$have")" "$(dirname "$have")/$lib.so"
+                  ls -l "$(dirname "$have")/$lib.so" "$have"
+                else
+                  echo "::warning::no $lib runtime in the target or the tooling"
+                fi
+              done'
           ls /tmp/sysroot/usr/include/qt5/QtCore/qglobal.h /tmp/sysroot/usr/include/sailfishapp/sailfishapp.h
           ls /tmp/sysroot/usr/include/EGL/egl.h /tmp/sysroot/usr/include/GLES2/gl2.h || echo "::warning::no EGL/GLES headers in the sysroot"
           ls -d /tmp/sysroot/usr/lib64 /tmp/sysroot/usr/lib 2>/dev/null
           ls -d /tmp/sysroot/usr/lib/gcc/*/* 2>/dev/null || echo "::warning::no GCC installation in the sysroot (crtbegin.o, libgcc)"
           ls /tmp/sysroot/usr/lib64/crt1.o /tmp/sysroot/usr/lib64/libc.so 2>/dev/null || echo "::warning::no crt1.o/libc.so in the sysroot's lib64"
           ls -d /tmp/sysroot/usr/include/c++/* 2>/dev/null || echo "::warning::no libstdc++ headers in the sysroot"
-          # -lgcc_s at link time needs the dev symlink the target lacks.
-          if [ -e /tmp/sysroot/usr/lib64/libgcc_s.so.1 ] && [ ! -e /tmp/sysroot/usr/lib64/libgcc_s.so ]; then
-            ln -s libgcc_s.so.1 /tmp/sysroot/usr/lib64/libgcc_s.so
-          fi
-          ls -l /tmp/sysroot/usr/lib64/libgcc_s.so* /tmp/sysroot/usr/lib64/libstdc++.so* 2>/dev/null || echo "::warning::no libgcc_s/libstdc++ in the sysroot's lib64"
+          ls -l /tmp/sysroot/usr/lib64/libgcc_s.so /tmp/sysroot/usr/lib64/libstdc++.so 2>/dev/null || echo "::warning::no libgcc_s.so/libstdc++.so in the sysroot's lib64"
           # Extracted by the container's root: a few root-only directories
           # (boot, etc/lvm, etc/pki/tls/private) come out unreadable by
           # the runner user.  The copy is ours, so take it over outright.
