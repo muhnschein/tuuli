@@ -79,9 +79,19 @@ if [ -n "$rpm" ]; then
     # BATCHERBATCHERBATCHER makes it emit `KIND|subject|message` without
     # colour. It exits non-zero for warnings too, so the markers decide,
     # not the status.
+    # Upstream's library check pipes its allow-list into `grep -q` once per
+    # library, so every match leaves an `echo: write error: Broken pipe` on
+    # stderr -- hundreds of them for a binary this size, which buried the
+    # section they belong to.  Keep stderr out of the verdict log, and show
+    # only what is not that noise.
     BATCHERBATCHERBATCHER=1 "$validator/rpmvalidation.sh" \
-        -g "$validator" "$rpm" > "$log" 2>&1 || true
+        -g "$validator" "$rpm" > "$log" 2> "$log.err" || true
     cat "$log"
+    if [ -s "$log.err" ] && grep -qv 'write error: Broken pipe' "$log.err"; then
+        echo "harbour-rpm: the validator also said, on stderr:" >&2
+        grep -v 'write error: Broken pipe' "$log.err" >&2
+    fi
+    rm -f "$log.err"
 fi
 
 [ -f "$log" ] || { echo "harbour-rpm: FAIL no validation log: $log" >&2; exit 1; }

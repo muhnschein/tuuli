@@ -183,6 +183,16 @@ ones this repository cannot settle by itself.  Each becomes a line in
 
 ### 1. The engine's linked libraries
 
+**Settled for the media-less build (2026-09-06).**  Jolla's validator
+accepts the Servo-linked `harbour-tuuli` outright: no disallowed library,
+empty RPATH, no vendor.  FreeType and HarfBuzz are inside the binary and
+GStreamer is not linked at all without the `media` feature, so what
+remains in `NEEDED` is already on Harbour's list.  The question below
+stands only for a build with `media` on, which links the system
+GStreamer; that build has not been attempted yet, and until it is, this
+is not something to take to Jolla.
+
+
 Harbour allows a fixed list of shared libraries (`ci/harbour/allowed_libraries.conf`).
 Servo, statically linked into the binary, still needs the system's
 GStreamer (`libgstreamer-1.0`, `libgstapp-1.0`, `libgstvideo-1.0` and

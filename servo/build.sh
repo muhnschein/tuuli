@@ -297,10 +297,18 @@ llvm-readelf -h "$BIN" | grep -q "AArch64" || die "$BIN is not an aarch64 binary
 if llvm-readelf -d "$BIN" | grep -q "RUNPATH\|RPATH"; then
     die "unexpected RUNPATH in harbour-tuuli (host paths leaking?)"
 fi
-for lib in $(llvm-readelf --needed-libs "$BIN" | sed -n 's/^ *\[\(.*\)\]$/\1/p'); do
+# The NEEDED list is the M0 deliverable: which system libraries a
+# Servo-linked harbour-tuuli asks the device for, and so which of them
+# Harbour has to allow (docs/HARBOUR.md).  Print it, do not just check it.
+log "libraries the binary needs"
+llvm-readelf --needed-libs "$BIN" | sed -n 's/^ *\[\(.*\)\]$/\1/p' | sort > "$OUT/needed-libs.txt"
+sed 's/^/    /' "$OUT/needed-libs.txt"
+printf '    (%s libraries)\n' "$(wc -l < "$OUT/needed-libs.txt")"
+while read -r lib; do
     [ -e "$LIBDIR/$lib" ] || [ -e "$SYSROOT/lib64/$lib" ] || [ -e "$SYSROOT/lib/$lib" ] \
         || die "needed library $lib is not in the sysroot"
-done
+done < "$OUT/needed-libs.txt"
+log "binary size: $(du -h "$BIN" | cut -f1) unstripped"
 
 # ---- Pack ----------------------------------------------------------------
 STAGE="$OUT/stage"

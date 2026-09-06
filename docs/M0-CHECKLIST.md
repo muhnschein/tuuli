@@ -16,26 +16,45 @@ whole approach.
       fact came out of it: Servo's storage crate links rusqlite 0.38, so
       tuuli-core's rusqlite is a range shared with it (root
       `Cargo.toml`; the mock build stays on 0.31 through the lockfile).
-- [ ] The `rpm` workflow with engine `servo` completes: `servo/build.sh`
-      builds against the SFOS 5.2 aarch64 target root lifted out of the
-      SDK image, SpiderMonkey included, and qttypes/qmetaobject-rs build
-      against the target's Qt 5.6 headers through `QT_INCLUDE_PATH`.
-      Expect to iterate on the sysroot's development packages (the
-      workflow's "Lift the target root" step lists them).
-- [ ] `llvm-readelf` shows an aarch64 binary with no RUNPATH and only
-      sysroot libraries in `NEEDED`.  The first build is without the
-      backend's `media` feature (Servo's dummy media backend), so the
-      list is fontconfig, EGL/GLESv2, GLib and friends; the GStreamer
-      libraries, `libgstwebrtc-1.0` included, join it once the workflow
-      runs with `media` on, which needs `gstreamer-webrtc-1.0.pc` in the
-      target (the sysroot step tries to install it and warns if the SDK
-      has no such package).
-- [ ] The workflow's validator step lists which of those libraries
-      Harbour does not allow; record each in `ci/harbour/waivers.conf`
-      and take the list to Jolla (`docs/HARBOUR.md`).
+- [x] The `rpm` workflow with engine `servo` completes (run 16, commit
+      5f395ed, 2026-09-06): `servo/build.sh` builds against the SFOS 5.2
+      aarch64 target root lifted out of the SDK image, SpiderMonkey
+      included, and qttypes/qmetaobject-rs build against the target's
+      Qt 5.6 headers through `QT_INCLUDE_PATH`.  40 minutes of
+      cross-compile on a 4-core runner, then the RPM.
+
+      Seven runs of iteration got there, and what each cost is worth
+      knowing before the next rebase: the sysroot copy (device nodes,
+      unreadable files, ownership); the host linker, since `-fuse-ld=lld`
+      has to be in the C flags and not only the Rust link line; the
+      target having no `/usr/lib/gcc` of its own, so the SDK tooling's
+      cross gcc directory is lifted into the sysroot; no unsuffixed
+      `libgcc_s.so`/`libstdc++.so` to resolve `-lgcc_s`, which a device
+      root has no reason to ship; Qt 5.6's `qtypetraits.h` against clang
+      16+ (`-Wno-enum-constexpr-conversion`); and SpiderMonkey's configure
+      probing with the compiler command alone, so the cross flags travel
+      inside `CC`/`CXX` rather than in `CFLAGS`.  `servo/build.sh` now
+      preflights all of that in seconds rather than tens of minutes.
+- [x] `llvm-readelf` shows an aarch64 binary with no RUNPATH and only
+      sysroot libraries in `NEEDED`; `servo/build.sh` checks both, and
+      from run 17 on it prints the list rather than only checking it.
+      This build is without the backend's `media` feature (Servo's dummy
+      media backend), so GStreamer is absent; FreeType and HarfBuzz are
+      built into the binary.  `libgstwebrtc-1.0` and the rest join the
+      list once the workflow runs with `media` on, which needs
+      `gstreamer-webrtc-1.0.pc` in the target (the sysroot step installs
+      it and warns if the SDK has no such package).
+- [x] The workflow's validator step lists which of those libraries
+      Harbour does not allow.  **Without `media`, none.**  Jolla's own
+      validator passes the Servo-linked package outright (`!END!PASS!`,
+      empty RPATH, no vendor set), so `ci/harbour/waivers.conf` stays
+      empty and the engine's linked libraries are not, as feared, a
+      question for Jolla in this configuration.  They become one when
+      `media` is on (`docs/HARBOUR.md`); that build is not attempted yet.
 - [ ] The `harbour-tuuli` RPM installs on the device and `ldd` resolves
-      against system libraries only (gstreamer, fontconfig, freetype,
-      harfbuzz, EGL/GLESv2 via hybris).
+      against system libraries only (fontconfig, EGL/GLESv2 via hybris;
+      FreeType and HarfBuzz are inside the binary, GStreamer absent until
+      `media` is on).  The package is 38 MB.
 
 ## 2. WebRender on Mali-G610 through libhybris
 
