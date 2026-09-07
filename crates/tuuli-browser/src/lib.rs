@@ -173,18 +173,43 @@ fn exec_application(app: *mut c_void) -> i32 {
 }
 
 /// Runs the browser with `engine` and returns the process exit code.
+/// Startup progress, on stderr, unconditionally.
+///
+/// A device launch has no other way to say where it stopped.  The journal
+/// shows the Qt platform plugin's line and then whatever the app prints,
+/// and until this existed the app printed nothing at all before its first
+/// frame -- so a launch that died in QML loading, in engine creation or in
+/// a static initialiser all looked identical, and identically silent.  The
+/// last stage printed is the one that did not finish.
+///
+/// Deliberately not behind a level or an environment variable: sailjail
+/// does not promise to carry either into the sandbox, and this has to work
+/// from the app grid, where there is no shell to set one.
+fn stage(what: &str) {
+    eprintln!("tuuli: startup {what}");
+}
+
 pub fn run(engine: Rc<dyn Engine>, args: Vec<String>) -> i32 {
     let _ = env_logger::try_init();
+    stage(&format!(
+        "begin, engine {} {}",
+        engine.name(),
+        engine.version()
+    ));
     let paths = AppPaths::xdg();
     let prefs = Preferences::load(&paths.prefs_file());
     apply_early_environment(&prefs);
+    stage("preferences read");
 
     let app = create_application(&args);
+    stage("QGuiApplication up");
     tuuli_qml::register_types();
+    stage("QML types registered");
     if let Err(e) = tuuli_qml::install(engine, paths, args) {
         eprintln!("harbour-tuuli: {e}");
         return 1;
     }
+    stage("browser object installed");
     if let Some(proxy) = tuuli_qml::platform::connman_read_proxy() {
         tuuli_qml::with_core(|b| b.set_proxy(proxy));
         tuuli_qml::pump();
@@ -192,8 +217,12 @@ pub fn run(engine: Rc<dyn Engine>, args: Vec<String>) -> i32 {
 
     let view = create_view();
     tuuli_qml::platform::add_image_provider(view_engine(view));
+    stage("view created");
     show_view(view, main_qml_url());
-    exec_application(app)
+    stage("QML shown, entering the event loop");
+    let code = exec_application(app);
+    stage(&format!("event loop returned {code}"));
+    code
 }
 
 /// Test support: instantiate the QML document at `url` in `engine` (a
