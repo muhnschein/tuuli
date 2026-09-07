@@ -35,15 +35,22 @@ whole approach.
       probing with the compiler command alone, so the cross flags travel
       inside `CC`/`CXX` rather than in `CFLAGS`.  `servo/build.sh` now
       preflights all of that in seconds rather than tens of minutes.
-- [x] `llvm-readelf` shows an aarch64 binary with no RUNPATH and only
-      sysroot libraries in `NEEDED`; `servo/build.sh` checks both, and
-      from run 17 on it prints the list rather than only checking it.
-      This build is without the backend's `media` feature (Servo's dummy
-      media backend), so GStreamer is absent; FreeType and HarfBuzz are
-      built into the binary.  `libgstwebrtc-1.0` and the rest join the
-      list once the workflow runs with `media` on, which needs
-      `gstreamer-webrtc-1.0.pc` in the target (the sysroot step installs
-      it and warns if the SDK has no such package).
+- [x] `llvm-readelf` shows an aarch64 binary with no RUNPATH, and the
+      libraries it needs are the target's (rpm's own dependency scan, run
+      17): `ld-linux-aarch64.so.1`, `libc`, `libm`, `libz`, `libgcc_s`,
+      `libstdc++`, `libfontconfig`, `libGLESv2`, `libsailfishapp`, and
+      Qt5 Core/Gui/Qml/Quick/DBus.  No GStreamer (no `media` feature), no
+      FreeType or HarfBuzz (inside the binary), no OpenSSL (rustls).
+      `libgstwebrtc-1.0` and the rest join the list once the workflow
+      runs with `media` on, which needs `gstreamer-webrtc-1.0.pc` in the
+      target (the sysroot step installs it and warns if the SDK has none).
+
+      Run 17 also exposed that `servo/build.sh`'s own NEEDED check had
+      been a no-op: it parsed `--needed-libs` for a bracketed form that
+      output never had, matched nothing, and looped zero times, so it
+      could not have caught a library missing from the sysroot.  It reads
+      the dynamic section's NEEDED entries now and fails if it parses
+      none.  rpm's scan is what produced the list above.
 - [x] The workflow's validator step lists which of those libraries
       Harbour does not allow.  **Without `media`, none.**  Jolla's own
       validator passes the Servo-linked package outright (`!END!PASS!`,

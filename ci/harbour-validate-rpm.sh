@@ -87,9 +87,12 @@ if [ -n "$rpm" ]; then
     BATCHERBATCHERBATCHER=1 "$validator/rpmvalidation.sh" \
         -g "$validator" "$rpm" > "$log" 2> "$log.err" || true
     cat "$log"
-    if [ -s "$log.err" ] && grep -qv 'write error: Broken pipe' "$log.err"; then
+    # Besides the broken pipes, cpio narrates every file it unpacks and
+    # ends with a block count; neither is a message about the package.
+    noise='write error: Broken pipe|^\./|^[0-9]+ blocks$'
+    if [ -s "$log.err" ] && grep -Eqv "$noise" "$log.err"; then
         echo "harbour-rpm: the validator also said, on stderr:" >&2
-        grep -v 'write error: Broken pipe' "$log.err" >&2
+        grep -Ev "$noise" "$log.err" >&2
     fi
     rm -f "$log.err"
 fi

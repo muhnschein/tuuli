@@ -183,14 +183,34 @@ ones this repository cannot settle by itself.  Each becomes a line in
 
 ### 1. The engine's linked libraries
 
-**Settled for the media-less build (2026-09-06).**  Jolla's validator
-accepts the Servo-linked `harbour-tuuli` outright: no disallowed library,
-empty RPATH, no vendor.  FreeType and HarfBuzz are inside the binary and
-GStreamer is not linked at all without the `media` feature, so what
-remains in `NEEDED` is already on Harbour's list.  The question below
-stands only for a build with `media` on, which links the system
-GStreamer; that build has not been attempted yet, and until it is, this
-is not something to take to Jolla.
+**Settled for the media-less build (2026-09-06, run 17.)**  Jolla's
+validator accepts the Servo-linked `harbour-tuuli` outright: no
+disallowed library, empty RPATH, no vendor.  This is the whole list rpm
+derived from the binary:
+
+    ld-linux-aarch64.so.1   libc.so.6      libm.so.6
+    libGLESv2.so.2          libz.so.1      libgcc_s.so.1
+    libfontconfig.so.1      libstdc++.so.6 libsailfishapp.so.1
+    libQt5Core.so.5  libQt5Gui.so.5  libQt5Qml.so.5
+    libQt5Quick.so.5 libQt5DBus.so.5
+
+Every one is allowed.  No GStreamer (the `media` feature is off), no
+FreeType or HarfBuzz (built into the binary), no OpenSSL (Servo's TLS is
+rustls, in the binary), no EGL of its own.  The question below stands
+only for a build with `media` on, which links the system GStreamer; that
+build has not been attempted, and until it is, this is not something to
+take to Jolla.
+
+Two things in that build are worth watching rather than assuming:
+
+- The binary imports `libQt5Quick.so.5(Qt_5_PRIVATE_API)`, from
+  `QQuickFramebufferObject`.  The validator does not object, but a
+  private-API import is the kind of thing a human reviewer might, and
+  the FBO item is not optional for us.
+- Installed size is 147 MB (38 MB compressed), and rpm records the
+  binary as "not stripped" because `--strip-debug` keeps the symbol
+  table.  Neither failed validation; both are large enough to raise on
+  their own if Harbour has an unpublished ceiling.
 
 
 Harbour allows a fixed list of shared libraries (`ci/harbour/allowed_libraries.conf`).

@@ -301,7 +301,12 @@ fi
 # Servo-linked harbour-tuuli asks the device for, and so which of them
 # Harbour has to allow (docs/HARBOUR.md).  Print it, do not just check it.
 log "libraries the binary needs"
-llvm-readelf --needed-libs "$BIN" | sed -n 's/^ *\[\(.*\)\]$/\1/p' | sort > "$OUT/needed-libs.txt"
+# `--needed-libs` prints a `NeededLibraries [` block of bare indented
+# names, not the bracketed form this once looked for: it matched nothing,
+# so the loop below ran zero times and checked nothing.  The dynamic
+# section's NEEDED entries are the reliable source.
+llvm-readelf -d "$BIN" | sed -n 's/.*(NEEDED).*\[\(.*\)\]/\1/p' | sort -u > "$OUT/needed-libs.txt"
+[ -s "$OUT/needed-libs.txt" ] || die "no NEEDED entries parsed from $BIN; the dynamic section read failed"
 sed 's/^/    /' "$OUT/needed-libs.txt"
 printf '    (%s libraries)\n' "$(wc -l < "$OUT/needed-libs.txt")"
 while read -r lib; do
