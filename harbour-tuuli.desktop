@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Tuuli
+Name[fi]=Tuuli
+Comment=Web browser
+Comment[fi]=Verkkoselain
+Icon=harbour-tuuli
+Exec=harbour-tuuli
+X-Nemo-Application-Type=silica-qt5
+
+[X-Sailjail]
+Permissions=Internet;WebView;Downloads;Pictures;Documents
+OrganizationName=io.github.muhnschein
+ApplicationName=tuuli
