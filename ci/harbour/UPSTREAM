@@ -1,0 +1,9 @@
+# Source of the *.conf files in this directory (waivers.conf excepted), copied verbatim.
+# ci/harbour-validate-rpm.sh runs the validator from the same commit; the allow-lists
+# job in .github/workflows/ci.yml warns when `branch` has moved on. Refresh both with
+# `ci/harbour-allowlists-drift.sh --update`. The files carry the validator's licence,
+# GPL-2.0-or-later; they are data read by CI, never part of the application.
+repo=https://github.com/sailfishos/sdk-harbour-rpmvalidator
+branch=master
+commit=7dd7dd5d62aa3e814c92ade089fdca4c3872b8ac
+files=allowed_libraries.conf allowed_qmlimports.conf allowed_requires.conf allowed_permissions.conf allowed_sailjailkeys.conf disallowed_orgnames.conf disallowed_qmlimport_patterns.conf deprecated_libraries.conf deprecated_qmlimports.conf deprecated_requires.conf
