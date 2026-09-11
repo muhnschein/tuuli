@@ -1,0 +1,44 @@
+name: check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    name: make check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            cmake g++ make clang-format clang-tidy \
+            qtbase5-dev qtbase5-dev-tools qtdeclarative5-dev qtdeclarative5-dev-tools \
+            qttools5-dev-tools libqt5sql5-sqlite \
+            qml-module-qtquick2 qml-module-qtqml qml-module-qtquick-window2 qml-module-qttest \
+            gcovr shellcheck desktop-file-utils rpm file
+
+      - name: make check
+        env:
+          PACKAGING_LINT_STRICT: "1"
+        run: make check
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: build/coverage/
+          if-no-files-found: ignore
+
+  allow-lists:
+    name: Harbour allow-lists drift (warning only)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare ci/harbour with sdk-harbour-rpmvalidator
+        run: ci/harbour-allowlists-drift.sh

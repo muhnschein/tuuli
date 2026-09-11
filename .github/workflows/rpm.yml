@@ -1,0 +1,40 @@
+# Device RPM: build for aarch64 with the Sailfish platform SDK and run Jolla's validator.
+# Runs on release tags and on demand; never on pull requests. Needs the repository
+# variable SFOS_RELEASE set to a 5.2 release (for example 5.2.0.13) — see docs/BUILDING.md.
+name: rpm
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+jobs:
+  rpm:
+    name: aarch64 RPM + Harbour validation
+    runs-on: ubuntu-24.04
+    container:
+      image: coderus/sailfishos-platform-sdk:${{ vars.SFOS_RELEASE }}
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stamp version from the tag
+        run: |
+          version=0.0.0
+          if [ "$GITHUB_REF_TYPE" = tag ]; then version=${GITHUB_REF_NAME#v}; fi
+          sed -i "s/^Version:.*/Version:    $version/" rpm/harbour-tuuli.spec
+          grep '^Version:' rpm/harbour-tuuli.spec
+
+      - name: Build
+        run: |
+          mkdir -p RPMS
+          mb2 -t "SailfishOS-${{ vars.SFOS_RELEASE }}-aarch64" -o RPMS build
+
+      - name: Harbour validation
+        run: |
+          mb2 -t "SailfishOS-${{ vars.SFOS_RELEASE }}-aarch64" check RPMS/harbour-tuuli-*.aarch64.rpm
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm
+          path: RPMS/*.rpm
