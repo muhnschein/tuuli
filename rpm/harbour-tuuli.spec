@@ -51,7 +51,7 @@ make %{?_smp_mflags}
 
 %install
 cd build
-make DESTDIR=%{buildroot} install
+make DESTDIR=%{buildroot} install/strip
 desktop-file-install --delete-original \
     --dir %{buildroot}%{_datadir}/applications \
     %{buildroot}%{_datadir}/applications/%{name}.desktop
