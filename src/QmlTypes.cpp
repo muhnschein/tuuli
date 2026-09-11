@@ -5,6 +5,7 @@
 #include "Core.h"
 
 #include <QQmlEngine>
+#include <qqml.h>
 
 namespace Tuuli {
 
