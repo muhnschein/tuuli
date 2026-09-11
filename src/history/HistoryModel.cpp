@@ -8,6 +8,7 @@
 #include <QSqlQuery>
 #include <QVariant>
 #include <QtDebug>
+#include <algorithm>
 
 namespace Tuuli {
 
@@ -100,7 +101,11 @@ void HistoryModel::visit(const QString &url, const QString &title)
     if (!isRecordable(url)) {
         return;
     }
-    const qint64 now = QDateTime::currentDateTimeUtc().toMSecsSinceEpoch();
+    // Strictly increasing within a session, so two visits in the same millisecond
+    // still order by recency rather than by row id.
+    const qint64 now =
+        std::max(QDateTime::currentDateTimeUtc().toMSecsSinceEpoch(), m_lastVisit + 1);
+    m_lastVisit = now;
 
     QSqlQuery exists(m_db);
     exists.prepare(QStringLiteral("SELECT id FROM browser_history WHERE url = ?"));

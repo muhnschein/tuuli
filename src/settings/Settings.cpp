@@ -153,7 +153,7 @@ void Settings::setDesktopMode(bool desktopMode)
 QString Settings::searchUrl(const QString &query) const
 {
     const QString encoded = QString::fromLatin1(QUrl::toPercentEncoding(query.trimmed()));
-    return QLatin1String(searchEngines().at(searchEngineIndex()).urlTemplate).arg(encoded);
+    return QString::fromLatin1(searchEngines().at(searchEngineIndex()).urlTemplate).arg(encoded);
 }
 
 QString Settings::urlForInput(const QString &input) const

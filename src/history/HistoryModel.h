@@ -71,6 +71,7 @@ private:
     QSqlDatabase m_db;
     QList<Entry> m_entries;
     QString m_searchTerm;
+    qint64 m_lastVisit = 0;
 };
 
 } // namespace Tuuli
