@@ -176,7 +176,7 @@ fresh; printf 'void probe() { QSettings settings; }\n' >>"$TREE/src/Core.cpp"
 expect error path-policy "QSettings without a file path"
 
 fresh; sed -i 's/^Summary:.*/&\nVendor:     someone/' "$SPEC"
-printf 'vendor Vendor must not be set # selftest waiver\n' >>"$TREE/ci/harbour/waivers.conf"
+printf 'vendor rpm/harbour-tuuli.spec Vendor must not be set # selftest waiver\n' >>"$TREE/ci/harbour/waivers.conf"
 expect waived vendor "waived finding reported as WAIVED"
 
 echo "harbour-check-selftest: $CASES cases, $([[ $FAILED -eq 0 ]] && echo all passed || echo FAILED)"

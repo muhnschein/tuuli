@@ -1,40 +1,146 @@
-# Device RPM: build for aarch64 with the Sailfish platform SDK and run Jolla's validator.
-# Runs on release tags and on demand; never on pull requests. Needs the repository
-# variable SFOS_RELEASE set to a 5.2 release (for example 5.2.0.13) — see docs/BUILDING.md.
+# Device RPM: cross-compiles harbour-tuuli for aarch64 inside the Sailfish platform
+# SDK image and runs Jolla's validator on the result. Step for step the same as
+# postivene's rpm.yml, minus its Rust plumbing.
+#
+# Not part of ci.yml: the image is multi-gigabyte and the build is minutes of runner
+# time nobody wants on every push. Run it from the Actions tab, push a `v*` tag for a
+# release, or a `build-*` tag to build a branch before this file reaches the default
+# branch (workflow_dispatch only sees workflows that are there).
+#
+# Every action is pinned to a commit: a tag can be repointed.
 name: rpm
 
 on:
-  push:
-    tags: ["v*.*.*"]
   workflow_dispatch:
+    inputs:
+      sfos_version:
+        description: >
+          Sailfish SDK release to build against. 5.2.0.15 is the Jolla Phone 2026
+          baseline and the floor this project supports; Harbour also requires the
+          __libc_start_main@GLIBC_2.34 that only a 5.x SDK links.
+        type: string
+        default: "5.2.0.15"
+  push:
+    tags: ["v*", "build-*"]
+
+permissions:
+  contents: read
 
 jobs:
   rpm:
     name: aarch64 RPM + Harbour validation
-    runs-on: ubuntu-24.04
-    container:
-      image: coderus/sailfishos-platform-sdk:${{ vars.SFOS_RELEASE }}
-      options: --user root
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      ARCH: aarch64
+      SFOS: ${{ inputs.sfos_version || '5.2.0.15' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Stamp version from the tag
+      # By digest, not tag: the image is a third party's and runs privileged with the
+      # checkout mounted read-write. To add a release, pull its tag once, read
+      # `docker inspect --format '{{index .RepoDigests 0}}'`, add a line here.
+      - name: Resolve the SDK image
         run: |
-          version=0.0.0
-          if [ "$GITHUB_REF_TYPE" = tag ]; then version=${GITHUB_REF_NAME#v}; fi
-          sed -i "s/^Version:.*/Version:    $version/" rpm/harbour-tuuli.spec
-          grep '^Version:' rpm/harbour-tuuli.spec
+          [[ $SFOS =~ ^[0-9]+(\.[0-9]+){3}$ ]] || {
+            echo "::error::sfos_version '$SFOS' is not a dotted version"; exit 1; }
+          case "$SFOS" in
+            5.2.0.15) digest=sha256:e7c4379393b17ee63d7f7443ce9930c315a61fdb2e732016346ccbe8c934435e ;;
+            *) echo "::error::no pinned digest for coderus/sailfishos-platform-sdk:$SFOS; add one to rpm.yml"
+               exit 1 ;;
+          esac
+          echo "IMAGE=coderus/sailfishos-platform-sdk@$digest" >> "$GITHUB_ENV"
 
-      - name: Build
+      - name: Pull the Sailfish SDK
+        run: docker pull "$IMAGE"
+
+      # The image names one target per architecture; asked for rather than assumed so
+      # a release whose naming differs fails here with the list, not inside rpmbuild.
+      - name: Resolve the build target
         run: |
-          mkdir -p RPMS
-          mb2 -t "SailfishOS-${{ vars.SFOS_RELEASE }}-aarch64" -o RPMS build
+          targets=$(docker run --rm "$IMAGE" sb2-config -l 2>/dev/null || true)
+          echo "available targets:"; echo "$targets"
+          target=$(echo "$targets" | grep -- "-$ARCH\$" | tail -1)
+          if [ -z "$target" ]; then
+            echo "::error::no $ARCH target in the $SFOS SDK image; see the list above"
+            exit 1
+          fi
+          echo "Building against $target"
+          echo "TARGET=$target" >> "$GITHUB_ENV"
 
-      - name: Harbour validation
+      # Version comes from a v* tag, otherwise the spec's placeholder stays. Release is
+      # 1.<run number> so every build is an upgrade of the previous one: rpm -U and
+      # pkcon do nothing for a package whose NEVRA they already have. Digits and
+      # periods only, which is all Harbour accepts in either field.
+      - name: Stamp version and release
         run: |
-          mb2 -t "SailfishOS-${{ vars.SFOS_RELEASE }}-aarch64" check RPMS/harbour-tuuli-*.aarch64.rpm
+          version=$(sed -n 's/^Version:[[:space:]]*//p' rpm/harbour-tuuli.spec)
+          case "$GITHUB_REF" in refs/tags/v*) version=${GITHUB_REF#refs/tags/v} ;; esac
+          [[ $version =~ ^[0-9.]+$ ]] || {
+            echo "::error::version '$version' must be digits and periods"; exit 1; }
+          release="1.${GITHUB_RUN_NUMBER}"
+          sed -i "s/^Version:.*/Version:    $version/; s/^Release:.*/Release:    $release/" \
+            rpm/harbour-tuuli.spec
+          grep -E '^(Version|Release):' rpm/harbour-tuuli.spec
+          echo "SHORT_SHA=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
 
-      - uses: actions/upload-artifact@v4
+      # sdk-manage refuses to run as root, so the build runs as the image's own user and
+      # the checkout must belong to it. The tree is mounted inside that user's home:
+      # rpm runs under scratchbox2, which maps unknown absolute paths into the target
+      # rootfs, so a tree at /build is written outside and read inside.
+      - name: Hand the checkout to the SDK's build user
+        run: |
+          uid=$(docker run --rm "$IMAGE" id -u)
+          gid=$(docker run --rm "$IMAGE" id -g)
+          home=$(docker run --rm "$IMAGE" sh -c 'echo $HOME')
+          echo "SDK builds as uid=$uid gid=$gid, HOME=$home"
+          echo "BUILDDIR=$home/harbour-tuuli" >> "$GITHUB_ENV"
+          sudo chown -R "$uid:$gid" "$PWD"
+
+      # `-X`: without it build-init asks `git describe` for a version, finds no tag and
+      # stops before writing .mb2/spec. build-requires installs the spec's BuildRequires
+      # into the target from the Jolla repositories, which a runner can reach. The C++
+      # build runs parallel make (%{_smp_mflags}) on the runner's cores.
+      - name: Build the RPM
+        run: |
+          docker run --rm --privileged \
+            -e TARGET \
+            -v "$PWD:$BUILDDIR" -w "$BUILDDIR" \
+            "$IMAGE" \
+            /bin/bash -c 'set -e
+              mb2 -t "$TARGET" -X build-init
+              mb2 -t "$TARGET" -X build-requires ||
+                echo "::warning::mb2 build-requires failed; the build may stop on a missing BuildRequires"
+              mb2 -t "$TARGET" -X build --no-check'
+
+      - name: Show mb2's state
+        if: failure()
+        run: ls -la .mb2 2>/dev/null || true; tail -60 .mb2/*.log 2>/dev/null || true
+
+      - name: Take the tree back
+        if: always()
+        run: sudo chown -R "$(id -u):$(id -g)" "$PWD"
+
+      - name: Install rpm tooling on the runner
+        run: ci/apt-install.sh binutils rpm rpm2cpio cpio file
+
+      - name: Show what was built
+        run: find RPMS -name '*.rpm' -print -exec rpm -qip {} \;
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: rpm
-          path: RPMS/*.rpm
+          name: harbour-tuuli-${{ env.ARCH }}-sfos${{ env.SFOS }}-${{ env.SHORT_SHA }}
+          path: RPMS/**/*.rpm
+          if-no-files-found: error
+          retention-days: 30
+
+      # The authority. ci/harbour-check.sh answers the same questions from the sources
+      # on every pull request; only this sees the built package: the generated Requires
+      # and Provides, the stripped binary's symbols, the real file modes. After the
+      # upload on purpose: a package Harbour would reject is still worth a phone.
+      - name: Validate the RPM against Harbour's rules
+        run: |
+          rpm=$(find RPMS -name 'harbour-tuuli-*.rpm' ! -name '*debug*' ! -name '*.src.rpm' | head -1)
+          [ -n "$rpm" ] || { echo "::error::no RPM to validate"; exit 1; }
+          echo "Validating $rpm"
+          ci/harbour-validate-rpm.sh "$rpm"

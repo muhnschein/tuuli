@@ -42,7 +42,7 @@ SECTION_ERRORS=0
 NAME=""
 USES_SILICA=0
 USES_QML_LAUNCHER=0
-declare -a WAIVER_IDS=() WAIVER_PATTERNS=()
+declare -a WAIVER_IDS=() WAIVER_SUBJECTS=() WAIVER_PATTERNS=()
 
 # ---------------------------------------------------------------- reporting
 color() {
@@ -55,24 +55,25 @@ color() {
     fi
 }
 
+# `<check-id> <subject-glob> <message-glob>` per line; shared with harbour-validate-rpm.sh.
 load_waivers() {
-    local file=$CONF_DIR/waivers.conf line
+    local file=$CONF_DIR/waivers.conf line id subject message
     [[ -f $file ]] || return 0
     while IFS= read -r line; do
         line=${line%%#*}
-        line=${line##+([[:space:]])}
-        line=${line%%+([[:space:]])}
-        [[ -z $line ]] && continue
-        WAIVER_IDS+=("${line%% *}")
-        WAIVER_PATTERNS+=("${line#* }")
+        read -r id subject message <<<"$line"
+        [[ -n ${id:-} && -n ${subject:-} && -n ${message:-} ]] || continue
+        WAIVER_IDS+=("$id")
+        WAIVER_SUBJECTS+=("$subject")
+        WAIVER_PATTERNS+=("$message")
     done <"$file"
 }
 
-waived() { # id message
+waived() { # id location message
     local i
     for i in "${!WAIVER_IDS[@]}"; do
         # shellcheck disable=SC2053
-        if [[ ${WAIVER_IDS[$i]} == "$1" && $2 == ${WAIVER_PATTERNS[$i]} ]]; then
+        if [[ ${WAIVER_IDS[$i]} == "$1" && $2 == ${WAIVER_SUBJECTS[$i]} && $3 == ${WAIVER_PATTERNS[$i]} ]]; then
             return 0
         fi
     done
@@ -80,7 +81,7 @@ waived() { # id message
 }
 
 error() { # id location message
-    if waived "$1" "$3"; then
+    if waived "$1" "$2" "$3"; then
         printf '%s [%s] [%s] %s\n' "$(color 36 WAIVED)" "$1" "$2" "$3"
         WAIVED=$((WAIVED + 1))
     else

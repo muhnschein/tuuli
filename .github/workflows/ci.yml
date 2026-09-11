@@ -1,21 +1,32 @@
+# The gate: `make check`, exactly as it runs on a laptop, with missing tools counted
+# as failures. `main` only beside `pull_request`, or everything runs twice.
 name: check
 
 on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+# A new push supersedes the run in flight.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   check:
     name: make check
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install toolchain
         run: |
-          sudo apt-get update
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+          ci/apt-install.sh \
             cmake g++ make clang-format clang-tidy \
             qtbase5-dev qtbase5-dev-tools qtdeclarative5-dev qtdeclarative5-dev-tools \
             qttools5-dev-tools libqt5sql5-sqlite \
@@ -27,9 +38,10 @@ jobs:
           PACKAGING_LINT_STRICT: "1"
         run: make check
 
+      # For the SonarQube import; a report, not a gate.
       - name: Upload coverage reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage
           path: build/coverage/
@@ -38,7 +50,8 @@ jobs:
   allow-lists:
     name: Harbour allow-lists drift (warning only)
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Compare ci/harbour with sdk-harbour-rpmvalidator
         run: ci/harbour-allowlists-drift.sh

@@ -53,8 +53,21 @@ SonarQube Cloud imports the XML; it is a report, not a gate (`make check` decide
     sfdk build
     sfdk check -s harbour RPMS/harbour-tuuli-*.aarch64.rpm
 
-The spec keeps `Version: 0.0.0`; CI stamps the tag. `.github/workflows/rpm.yml` runs
-the same three steps in the `coderus/sailfishos-platform-sdk` image on tags and manual
-dispatch and needs the repository variable `SFOS_RELEASE` (a 5.2 release string).
+`.github/workflows/rpm.yml` does the same unattended, the way postivene's does: a
+`docker run` of `coderus/sailfishos-platform-sdk` pinned by digest (5.2.0.15), the
+target resolved from the image, the checkout handed to the SDK's own user and mounted
+inside its home (rpm under scratchbox2 maps unknown absolute paths into the target
+rootfs), then `mb2 -X build-init`, `build-requires` and `build --no-check`. The C++
+build runs parallel make on the runner's cores. Nothing is cached on purpose: the only
+large input is the SDK image, and restoring it from the Actions cache is no faster than
+pulling it; the build itself takes seconds.
+
+Run it from the Actions tab (`sfos_version` is the input), push a `v*` tag for a
+release, or a `build-*` tag to build a branch before the workflow reaches the default
+branch. The spec keeps `Version: 0.0.0` and `Release: 1`; the workflow stamps the
+tag's version and `1.<run number>` so each build installs over the previous one.
+The RPM is uploaded as `harbour-tuuli-aarch64-sfos<release>-<sha>` (30 days), and
+Jolla's validator then runs on it; a rejection fails the job after the upload.
+
 Without the device SDK the host build links `src/main.cpp` against
 `tests/stubs/sailfishapp/` so the entry point still compiles under `-Werror`.

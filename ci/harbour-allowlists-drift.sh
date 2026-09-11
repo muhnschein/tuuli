@@ -34,5 +34,14 @@ for file in $files; do
         fi
     fi
 done
+if [[ $UPDATE -eq 1 ]]; then
+    head=$(git ls-remote "$repo.git" "refs/heads/$branch" | cut -f1)
+    if [[ $head =~ ^[0-9a-f]{40}$ ]]; then
+        sed -i "s/^commit=.*/commit=$head/" "$UPSTREAM"
+        echo "pinned ci/harbour/UPSTREAM to $head"
+    else
+        echo "::warning::could not resolve $repo $branch to a commit"
+    fi
+fi
 [[ $drift -eq 0 ]] && echo "allow-lists match upstream"
 exit 0

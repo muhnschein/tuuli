@@ -21,11 +21,18 @@ layout (spec `%files` and CMake destinations), icons, linked libraries, exported
 `ci/harbour-check-selftest.sh` breaks every one of those rules in a throwaway tree and
 asserts the check names it.
 
-`ci/harbour/*.conf` are the validator's allow-lists copied verbatim (`ci/harbour/UPSTREAM`
-records the source). The `allow-lists` job in `.github/workflows/ci.yml` warns when they
-lag upstream; refresh with `ci/harbour-allowlists-drift.sh --update`.
+`ci/harbour/*.conf` are the validator's allow-lists copied verbatim; `ci/harbour/UPSTREAM`
+records the source and the commit. The `rpm` workflow runs the validator itself, from
+that commit, on the built package (`ci/harbour-validate-rpm.sh`), so the two checks read
+the same rules. The `allow-lists` job in `.github/workflows/ci.yml` warns when upstream
+has moved on; `ci/harbour-allowlists-drift.sh --update` refreshes files and pin together.
+The lists carry the validator's GPL-2.0-or-later licence; CI reads them as data, the
+application never links them.
 
-Anything not in `ci/harbour/waivers.conf` fails.
+Anything not in `ci/harbour/waivers.conf` fails, in both checks. A waiver names the
+check id (`requires`, `qml-import`, ... for the source check; `rpm-requires`,
+`rpm-paths`, ... for the validator's sections), the subject and the message, all as
+globs, with the reason as a comment.
 
 ## Current waivers
 
