@@ -1,0 +1,16 @@
+# Build trees
+/build/
+/build-*/
+/RPMS/
+/.cache/
+compile_commands.json
+
+# Generated translation binaries
+*.qm
+
+# Editor and SDK state
+*.user
+*.user.*
+*.swp
+*~
+.DS_Store
