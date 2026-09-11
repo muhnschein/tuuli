@@ -1,0 +1,5 @@
+# Source of the *.conf files in this directory, copied verbatim (see docs/HARBOUR.md).
+# CI compares them against this repository and warns when they lag behind.
+repo=https://github.com/sailfishos/sdk-harbour-rpmvalidator
+branch=master
+files=allowed_libraries.conf allowed_qmlimports.conf allowed_requires.conf allowed_permissions.conf allowed_sailjailkeys.conf disallowed_orgnames.conf disallowed_qmlimport_patterns.conf deprecated_libraries.conf deprecated_qmlimports.conf deprecated_requires.conf
